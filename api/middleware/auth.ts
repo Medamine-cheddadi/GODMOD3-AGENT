@@ -55,10 +55,10 @@ if (!getValidKeys()) {
 export function apiKeyAuth(req: Request, res: Response, next: NextFunction): void {
   const validKeys = getValidKeys()
 
-  // If no keys configured, allow all requests (local dev mode)
+  // If no keys configured, allow all requests (local dev / self-hosted mode)
   if (!validKeys) {
     req.apiKeyId = 'anonymous'
-    const tier = resolveTier(null)
+    const tier = 'enterprise'
     req.tier = tier
     req.tierConfig = getTierConfig(tier)
     next()

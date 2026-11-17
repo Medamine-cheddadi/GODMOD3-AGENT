@@ -150,7 +150,7 @@ function buildOrchestrationPrompt(
  */
 export function collectAllResponses(
   models: string[],
-  messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>,
+  messages: Array<{ role: 'system' | 'user' | 'assistant' | 'tool' | string; content: string | null; [key: string]: any }>,
   apiKey: string,
   params: {
     temperature?: number

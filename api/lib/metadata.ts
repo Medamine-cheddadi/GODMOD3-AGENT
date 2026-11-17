@@ -78,7 +78,8 @@ export interface MetadataEvent {
 
   // Response metadata
   total_duration_ms: number
-  response_length: number
+  response_length?: number
+  error_type?: string
 
   // Liquid Response metadata (streaming upgrades)
   liquid?: {
@@ -308,7 +309,7 @@ export function getStats(): MetadataStats {
     }
 
     durations.push(e.total_duration_ms)
-    responseLengths.push(e.response_length)
+    if (e.response_length !== undefined) responseLengths.push(e.response_length)
 
     if (e.stream) streamCount++
 

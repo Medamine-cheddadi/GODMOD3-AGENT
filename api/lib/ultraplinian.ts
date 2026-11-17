@@ -432,9 +432,12 @@ export function raceModels(
 
 // ── Query a Single Model ─────────────────────────────────────────────
 
-interface Message {
-  role: 'system' | 'user' | 'assistant'
-  content: string
+export interface Message {
+  role: 'system' | 'user' | 'assistant' | 'tool' | string
+  content: string | null
+  tool_call_id?: string
+  tool_calls?: any[]
+  name?: string
 }
 
 const PROVIDER_ENDPOINTS: Record<Provider, string> = {
@@ -527,12 +530,12 @@ export async function queryModel(
     clearTimeout(timeout)
 
     if (!response!.ok) {
-      const errorData = await response!.json().catch(() => ({}))
-      const errMsg = typeof errorData.error === 'string' ? errorData.error : errorData.error?.message
+      const errorData = (await response!.json().catch(() => ({}))) as any
+      const errMsg = typeof errorData?.error === 'string' ? errorData.error : errorData?.error?.message
       throw new Error(errMsg || `HTTP ${response!.status}`)
     }
 
-    const data = await response!.json()
+    const data = (await response!.json()) as any
     const content = data.choices?.[0]?.message?.content || ''
 
     if (!content) throw new Error('Empty response')

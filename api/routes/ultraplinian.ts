@@ -51,6 +51,7 @@ export const ultraplinianRoutes = Router()
 
 ultraplinianRoutes.post('/completions', async (req, res) => {
   const startTime = Date.now()
+  const isStream = req.body?.stream !== false
 
   try {
     const {
@@ -79,7 +80,7 @@ ultraplinianRoutes.post('/completions', async (req, res) => {
       presence_penalty,
       repetition_penalty,
       // Liquid Response (SSE streaming with live leader upgrades)
-      stream = true,  // ON by default — serve first good response, upgrade live
+      stream = isStream,  // ON by default — serve first good response, upgrade live
       liquid_min_delta = 8, // Min score improvement to trigger a leader upgrade (1-50)
       // Dataset opt-in
       contribute_to_dataset = false,
@@ -194,7 +195,7 @@ ultraplinianRoutes.post('/completions', async (req, res) => {
     }
 
     // ── Parseltongue ─────────────────────────────────────────────────
-    let parseltongueResult = null
+    let parseltongueResult: any = null
     let processedMessages = baseMessages
 
     if (parseltongue) {
@@ -518,9 +519,16 @@ ultraplinianRoutes.post('/completions', async (req, res) => {
     if (!winner || !winner.content) {
       recordEvent({
         endpoint: '/v1/ultraplinian/completions',
-        mode: 'ultraplinian-failed',
+        mode: 'ultraplinian',
         tier,
         stream,
+        pipeline: {
+          godmode,
+          autotune: !!autotuneResult,
+          parseltongue: !!parseltongueResult,
+          stm_modules: stm_modules || [],
+          strategy,
+        },
         models_queried: models.length + veniceEntries.length,
         models_succeeded: scoredResults.filter(r => r.success).length,
         model_results: scoredResults.map(r => ({
@@ -528,6 +536,7 @@ ultraplinianRoutes.post('/completions', async (req, res) => {
           success: r.success, content_length: r.content?.length || 0,
           error_type: r.error ? categorizeError(r.error) : undefined,
         })),
+        error_type: 'all_models_failed',
         total_duration_ms: Date.now() - startTime,
       })
       res.status(502).json({
@@ -648,11 +657,18 @@ ultraplinianRoutes.post('/completions', async (req, res) => {
     console.error('[ultraplinian]', err)
     recordEvent({
       endpoint: '/v1/ultraplinian/completions',
-      mode: 'ultraplinian-error',
+      mode: 'ultraplinian',
+      stream: isStream,
+      pipeline: {
+        godmode: req.body?.godmode !== false,
+        autotune: req.body?.autotune !== false,
+        parseltongue: req.body?.parseltongue !== false,
+        stm_modules: req.body?.stm_modules || [],
+      },
       error_type: 'internal_error',
       total_duration_ms: Date.now() - startTime,
     })
-    if (stream) {
+    if (isStream) {
       try {
         res.write(`event: race:error\ndata: ${JSON.stringify({ error: 'Internal server error' })}\n\n`)
         res.end()

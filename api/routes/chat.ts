@@ -20,7 +20,7 @@ import { v4 as uuidv4 } from 'uuid'
 import { computeAutoTuneParams, type AutoTuneStrategy } from '../../src/lib/autotune'
 import { applyParseltongue, type ParseltongueConfig } from '../../src/lib/parseltongue'
 import { allModules, applySTMs, type STMModule } from '../../src/stm/modules'
-import { sendMessage } from '../../src/lib/openrouter'
+import { sendMessage, sendMessageWithTools } from '../../src/lib/openrouter'
 import { getSharedProfiles } from './autotune'
 import {
   GODMODE_SYSTEM_PROMPT,
@@ -72,6 +72,7 @@ function runPipeline(opts: {
   frequency_penalty?: number
   presence_penalty?: number
   repetition_penalty?: number
+  tools?: any[]
 }) {
   const {
     messages, godmode, custom_system_prompt,
@@ -79,18 +80,37 @@ function runPipeline(opts: {
     parseltongue_technique, parseltongue_intensity, stm_modules,
     temperature, top_p, top_k,
     frequency_penalty, presence_penalty, repetition_penalty,
+    tools,
   } = opts
 
   // Normalize messages
   const normalizedMessages = messages.map((m: any) => ({
-    role: m.role as 'system' | 'user' | 'assistant',
-    content: String(m.content || ''),
+    role: m.role,
+    content: m.content !== undefined && m.content !== null ? String(m.content) : null,
+    ...(m.tool_call_id ? { tool_call_id: m.tool_call_id } : {}),
+    ...(m.tool_calls ? { tool_calls: m.tool_calls } : {}),
+    ...(m.name ? { name: m.name } : {}),
   }))
 
-  // Build system prompt
-  const systemPrompt = godmode
-    ? (custom_system_prompt || GODMODE_SYSTEM_PROMPT) + DEPTH_DIRECTIVE
-    : custom_system_prompt || ''
+  // Build system prompt (preserve caller's system prompt in agentic flows)
+  const callerSystemMsg = messages.find((m: any) => m.role === 'system')?.content
+  const isAgentic = Boolean(tools && tools.length > 0)
+
+  let basePrompt = custom_system_prompt || (callerSystemMsg ? String(callerSystemMsg) : '')
+  let systemPrompt = basePrompt
+  if (godmode) {
+    if (basePrompt) {
+      if (!basePrompt.includes('G0DM0D3') && !basePrompt.includes('GODMODE')) {
+        systemPrompt = `${basePrompt}\n\n${GODMODE_SYSTEM_PROMPT}`
+      }
+    } else {
+      systemPrompt = GODMODE_SYSTEM_PROMPT
+    }
+    // Only inject 500+ word Depth Directive when NOT in agentic tool-calling mode
+    if (!isAgentic) {
+      systemPrompt += DEPTH_DIRECTIVE
+    }
+  }
 
   const allMessages = [
     ...(systemPrompt ? [{ role: 'system' as const, content: systemPrompt }] : []),
@@ -102,7 +122,7 @@ function runPipeline(opts: {
   const userContent = lastUserMsg?.content || ''
   const conversationHistory = normalizedMessages
     .filter(m => m.role !== 'system')
-    .map(m => ({ role: m.role, content: m.content }))
+    .map(m => ({ role: String(m.role), content: m.content || '' }))
 
   let autotuneResult: any = null
   let finalParams: Record<string, number | undefined> = {
@@ -152,7 +172,7 @@ function runPipeline(opts: {
 
     processedMessages = allMessages.map(m => {
       if (m.role === 'user') {
-        const result = applyParseltongue(m.content, ptConfig)
+        const result = applyParseltongue(m.content || '', ptConfig)
         if (!parseltongueResult && result.triggersFound.length > 0) {
           parseltongueResult = {
             triggers_found: result.triggersFound,
@@ -207,10 +227,10 @@ chatRoutes.post('/completions', async (req, res) => {
   try {
     const {
       messages,
-      model = 'nousresearch/hermes-4-70b',
+      model = 'z-ai/glm-5.3-flash',
       openrouter_api_key: caller_key,
       stream = false,
-      max_tokens = 4096,
+      max_tokens = 8192,
       // G0DM0D3 pipeline options (optional — transparent to OpenAI SDK users)
       godmode = true,
       custom_system_prompt,
@@ -229,7 +249,11 @@ chatRoutes.post('/completions', async (req, res) => {
       repetition_penalty,
       // Dataset opt-in
       contribute_to_dataset = false,
+      tools,
+      tool_choice,
     } = req.body
+
+    console.log(`[G0DM0D3] POST /v1/chat/completions -> Model: ${model}, Messages: ${messages?.length || 0}, Tools: ${tools?.length || 0}`)
 
     // Validate
     if (!messages || !Array.isArray(messages) || messages.length === 0) {
@@ -243,10 +267,11 @@ chatRoutes.post('/completions', async (req, res) => {
       return
     }
 
-    if (messages.length > 100) {
+    const maxMessages = 2000
+    if (messages.length > maxMessages) {
       res.status(400).json({
         error: {
-          message: 'Too many messages (max 100)',
+          message: `Too many messages (max ${maxMessages})`,
           type: 'invalid_request_error',
           code: 'too_many_messages',
         }
@@ -628,6 +653,7 @@ chatRoutes.post('/completions', async (req, res) => {
       parseltongue_technique, parseltongue_intensity, stm_modules,
       temperature, top_p, top_k,
       frequency_penalty, presence_penalty, repetition_penalty,
+      tools,
     })
 
     // ── Streaming mode ────────────────────────────────────────────────
@@ -850,7 +876,7 @@ chatRoutes.post('/completions', async (req, res) => {
     }
 
     // ── Non-streaming mode ────────────────────────────────────────────
-    const response = await sendMessage({
+    const modelResult = await sendMessageWithTools({
       messages: pipeline.processedMessages,
       model,
       apiKey: openrouter_api_key,
@@ -861,10 +887,16 @@ chatRoutes.post('/completions', async (req, res) => {
       frequency_penalty: pipeline.finalParams.frequency_penalty,
       presence_penalty: pipeline.finalParams.presence_penalty,
       repetition_penalty: pipeline.finalParams.repetition_penalty,
+      tools,
+      tool_choice,
     })
 
+    const response = modelResult.content
+
     // STM transforms
-    const { finalResponse, stmResult } = applySTMPost(response, stm_modules)
+    const { finalResponse, stmResult } = response
+      ? applySTMPost(response, stm_modules)
+      : { finalResponse: '', stmResult: null }
 
     // Dataset collection (opt-in)
     let datasetId: string | null = null
@@ -914,10 +946,15 @@ chatRoutes.post('/completions', async (req, res) => {
       response_length: finalResponse.length,
     })
 
-    // Estimate tokens
-    const promptText = pipeline.processedMessages.map(m => m.content).join(' ')
+    // Estimate tokens or use actual upstream usage if provided
+    const promptText = pipeline.processedMessages.map(m => m.content || '').join(' ')
     const promptTokens = estimateTokens(promptText)
     const completionTokens = estimateTokens(finalResponse)
+    const usage = modelResult.usage || {
+      prompt_tokens: promptTokens,
+      completion_tokens: completionTokens,
+      total_tokens: promptTokens + completionTokens,
+    }
 
     // ── OpenAI-compatible response ────────────────────────────────────
     res.json({
@@ -930,16 +967,13 @@ chatRoutes.post('/completions', async (req, res) => {
           index: 0,
           message: {
             role: 'assistant',
-            content: finalResponse,
+            content: finalResponse || null,
+            ...(modelResult.tool_calls ? { tool_calls: modelResult.tool_calls } : {}),
           },
-          finish_reason: 'stop',
+          finish_reason: modelResult.finish_reason || (modelResult.tool_calls ? 'tool_calls' : 'stop'),
         },
       ],
-      usage: {
-        prompt_tokens: promptTokens,
-        completion_tokens: completionTokens,
-        total_tokens: promptTokens + completionTokens,
-      },
+      usage,
       // G0DM0D3 pipeline metadata (ignored by OpenAI SDKs, useful for power users)
       x_g0dm0d3: {
         params_used: pipeline.finalParams,

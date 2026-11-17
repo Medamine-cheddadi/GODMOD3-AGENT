@@ -55,9 +55,12 @@ export function formatAPIError(status: number, errorMessage?: string): string {
   return errorMessage || `API error (${status}). Check your API key and network connection.`
 }
 
-interface Message {
-  role: 'system' | 'user' | 'assistant'
-  content: string
+export interface Message {
+  role: 'system' | 'user' | 'assistant' | 'tool' | string
+  content: string | null
+  tool_call_id?: string
+  tool_calls?: any[]
+  name?: string
 }
 
 interface SendMessageOptions {
@@ -73,6 +76,8 @@ interface SendMessageOptions {
   frequency_penalty?: number
   presence_penalty?: number
   repetition_penalty?: number
+  tools?: any[]
+  tool_choice?: any
 }
 
 interface OpenRouterResponse {
@@ -82,6 +87,7 @@ interface OpenRouterResponse {
     message: {
       role: string
       content: string
+      tool_calls?: any[]
     }
     finish_reason: string
   }[]
@@ -93,9 +99,9 @@ interface OpenRouterResponse {
 }
 
 /**
- * Send a message to the AI model via OpenRouter
+ * Send a message with tool/function calling support
  */
-export async function sendMessage({
+export async function sendMessageWithTools({
   messages,
   model,
   apiKey,
@@ -107,8 +113,19 @@ export async function sendMessage({
   top_k,
   frequency_penalty,
   presence_penalty,
-  repetition_penalty
-}: SendMessageOptions): Promise<string> {
+  repetition_penalty,
+  tools,
+  tool_choice,
+}: SendMessageOptions): Promise<{
+  content: string
+  tool_calls?: any[]
+  finish_reason: string
+  usage?: {
+    prompt_tokens: number
+    completion_tokens: number
+    total_tokens: number
+  }
+}> {
   if (!apiKey) {
     throw new Error('No API key set. Go to Settings → API Key and enter your OpenRouter key from [openrouter.ai/keys](https://openrouter.ai/keys).')
   }
@@ -127,13 +144,14 @@ export async function sendMessage({
   if (frequency_penalty !== undefined) body.frequency_penalty = frequency_penalty
   if (presence_penalty !== undefined) body.presence_penalty = presence_penalty
   if (repetition_penalty !== undefined) body.repetition_penalty = repetition_penalty
+  if (tools !== undefined && tools.length > 0) body.tools = tools
+  if (tool_choice !== undefined) body.tool_choice = tool_choice
 
   // Add provider-specific options if needed
   const providerOptions: Record<string, unknown> = {}
 
   // Handle no-log mode for supported providers
   if (noLog) {
-    // OpenRouter passes through provider preferences
     providerOptions['allow_fallbacks'] = false
   }
 
@@ -141,30 +159,72 @@ export async function sendMessage({
     body.provider = providerOptions
   }
 
-  const response = await fetch(OPENROUTER_API_URL, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-      'HTTP-Referer': 'https://godmod3.ai',
-      'X-Title': 'GODMOD3.AI'
-    },
-    body: JSON.stringify(body),
-    signal
-  })
+  let lastError: any
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const timeoutSignal = AbortSignal.timeout(90000)
+      const effectiveSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal
 
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}))
-    throw new Error(formatAPIError(response.status, errorData.error?.message))
+      const response = await fetch(OPENROUTER_API_URL, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+          'HTTP-Referer': 'https://godmod3.ai',
+          'X-Title': 'GODMOD3.AI'
+        },
+        body: JSON.stringify(body),
+        signal: effectiveSignal
+      })
+
+      if (!response.ok) {
+        const errorData = (await response.json().catch(() => ({}))) as any
+        throw new Error(formatAPIError(response.status, errorData.error?.message))
+      }
+
+      const data: OpenRouterResponse = (await response.json()) as OpenRouterResponse
+
+      if (!data.choices || data.choices.length === 0) {
+        throw new Error('No response from model')
+      }
+
+      const msg = data.choices[0].message
+      // If content is null/empty but reasoning exists (e.g. GLM / DeepSeek R1), fall back to reasoning
+      const rawContent = msg.content || (msg as any).reasoning || (msg as any).reasoning_content || ''
+      return {
+        content: rawContent,
+        tool_calls: msg.tool_calls,
+        finish_reason: data.choices[0].finish_reason || (msg.tool_calls ? 'tool_calls' : 'stop'),
+        usage: data.usage,
+      }
+    } catch (err: any) {
+      lastError = err
+      const isNetworkErr =
+        err.name === 'TypeError' ||
+        err.name === 'TimeoutError' ||
+        err.code === 'UND_ERR_CONNECT_TIMEOUT' ||
+        err.cause?.code === 'UND_ERR_CONNECT_TIMEOUT' ||
+        err.code === 'ENOTFOUND' ||
+        err.cause?.code === 'ENOTFOUND' ||
+        err.code === 'EAI_AGAIN' ||
+        err.cause?.code === 'EAI_AGAIN'
+      if (isNetworkErr && attempt < 3) {
+        console.warn(`[OpenRouter] Network connection attempt ${attempt}/3 failed (${err.cause?.code || err.message}), retrying...`)
+        await new Promise(r => setTimeout(r, 1000 * attempt))
+        continue
+      }
+      throw err
+    }
   }
+  throw lastError
+}
 
-  const data: OpenRouterResponse = await response.json()
-
-  if (!data.choices || data.choices.length === 0) {
-    throw new Error('No response from model')
-  }
-
-  return data.choices[0].message.content
+/**
+ * Send a message to the AI model via OpenRouter
+ */
+export async function sendMessage(options: SendMessageOptions): Promise<string> {
+  const res = await sendMessageWithTools(options)
+  return res.content
 }
 
 /**
@@ -216,7 +276,7 @@ export async function* streamMessage({
   })
 
   if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}))
+    const errorData = (await response.json().catch(() => ({}))) as any
     throw new Error(formatAPIError(response.status, errorData.error?.message))
   }
 
@@ -274,7 +334,7 @@ export async function getModels(apiKey: string): Promise<string[]> {
     throw new Error('Failed to fetch models')
   }
 
-  const data = await response.json()
+  const data = (await response.json()) as any
   return data.data.map((model: { id: string }) => model.id)
 }
 
@@ -361,7 +421,7 @@ export async function sendMessageViaProxy({
     throw new Error(errorMessage)
   }
 
-  const data = await response.json()
+  const data = (await response.json()) as any
 
   if (!data.choices || data.choices.length === 0) {
     throw new Error('No response from model')
@@ -476,7 +536,7 @@ export async function streamConsortium(
   })
 
   if (!response.ok) {
-    const err = await response.json().catch(() => ({}))
+    const err = (await response.json().catch(() => ({}))) as any
     throw new Error(formatAPIError(response.status, err.error))
   }
 
@@ -642,7 +702,7 @@ export async function streamUltraplinian(
   })
 
   if (!response.ok) {
-    const err = await response.json().catch(() => ({}))
+    const err = (await response.json().catch(() => ({}))) as any
     throw new Error(formatAPIError(response.status, err.error))
   }
 
@@ -758,7 +818,7 @@ export async function sendMessageViaVenice({
     throw new Error(msg)
   }
 
-  const data = await response.json() as OpenRouterResponse
+  const data = (await response.json()) as any as OpenRouterResponse
 
   if (!data.choices || data.choices.length === 0) {
     throw new Error('No response from Venice model')
