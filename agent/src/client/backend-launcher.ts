@@ -53,9 +53,9 @@ export async function ensureBackendRunning(options?: EnsureBackendOptions): Prom
   const healthUrl = `${normalizedBase}/v1/health`
   const timeoutMs = options?.timeoutMs || 20000
 
-  // 1. Check if backend is already online
+  // 1. Check if backend is already online (fast check: localhost responds in <1ms)
   try {
-    const res = await fetch(healthUrl, { signal: AbortSignal.timeout(1500) })
+    const res = await fetch(healthUrl, { signal: AbortSignal.timeout(350) })
     if (res.ok) {
       const data = (await res.json().catch(() => ({}))) as any
       if (data?.status === 'ok') {
@@ -120,12 +120,12 @@ export async function ensureBackendRunning(options?: EnsureBackendOptions): Prom
   const pid = child.pid
   console.log(chalk.gray(`[G0DM0D3 Agent] Spawned server process (PID: ${pid}), waiting for readiness...`))
 
-  // 4. Poll /v1/health until online or timeout
+  // 4. Poll /v1/health until online or timeout (quick 150ms intervals)
   const start = Date.now()
   while (Date.now() - start < timeoutMs) {
-    await new Promise((r) => setTimeout(r, 600))
+    await new Promise((r) => setTimeout(r, 150))
     try {
-      const res = await fetch(healthUrl, { signal: AbortSignal.timeout(1000) })
+      const res = await fetch(healthUrl, { signal: AbortSignal.timeout(500) })
       if (res.ok) {
         const data = (await res.json().catch(() => ({}))) as any
         if (data?.status === 'ok') {

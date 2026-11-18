@@ -7,7 +7,6 @@ import { Command } from 'commander'
 import readline from 'readline'
 import chalk from 'chalk'
 import ora from 'ora'
-import { search } from '@inquirer/prompts'
 import { GodModeAgent } from './agent/agent'
 import { GodModeClient } from './client/godmode-client'
 import { AGENT_SYSTEM_PROMPT, resolveFileMentions } from './agent/prompt'
@@ -19,17 +18,15 @@ import { gitDiffHandler, undoChangesHandler } from './tools/git'
 import { spawnSubagentHandler, SUBAGENT_PROMPTS } from './tools/subagent'
 import { ultraplinianRaceHandler } from './tools/ultraplinian'
 import { manageSkillsHandler } from './tools/skills'
-
-const banner = `
-${chalk.bold.magenta(' ▄████  ██████  ██████  ███▄ ▄███  ██████  ██████  ██████ ')}
-${chalk.bold.magenta('██      ██  ██  ██   ██ ██ ███ ██  ██  ██  ██   ██      ██ ')}
-${chalk.bold.cyan('██ ▄███ ██  ██  ██   ██ ██  █  ██  ██  ██  ██   ██  █████ ')}
-${chalk.bold.cyan('██  ██  ██  ██  ██   ██ ██     ██  ██  ██  ██   ██      ██ ')}
-${chalk.bold.green(' ██████  ████   ██████  ██     ██   ████   ██████  ██████ ')}
-${chalk.gray('─────────────────────────────────────────────────────────────')}
-${chalk.bold.white(' ░▒▓█  G0DM0D3 AUTONOMOUS AGENT v1.3.0 // LIBERATED TERMINAL ENGINE  █▓▒░')}
-${chalk.gray('─────────────────────────────────────────────────────────────')}
-`
+import {
+  renderBanner,
+  renderCommandPalette,
+  renderThinkingBox,
+  renderToolCallBox,
+  renderToolResultBox,
+  renderResponseCard,
+  formatTerminalMarkdown,
+} from './terminal-ui'
 
 const CLI_HISTORY_FILE = path.join(os.homedir(), '.godmod3', 'history')
 const MAX_HISTORY_LINES = 1000
@@ -91,8 +88,6 @@ program
   .option('--list-profiles', 'List all available cost/context profiles')
   .option('--check', 'Check connection to G0DM0D3 API backend')
   .action(async (taskArgs: string[], options) => {
-    console.log(banner)
-
     if (options.listProfiles) {
       console.log(chalk.bold.cyan('Available Model & Cost Profiles:\n'))
       for (const [key, val] of Object.entries(MODEL_PROFILES)) {
@@ -204,82 +199,6 @@ program
 
     let isVerbose = Boolean(options.verbose)
 
-    const formatThinkingBox = (thought: string, verbose = false): string => {
-      const words = thought.trim().split(/\s+/).filter(Boolean).length
-      const lines = thought.trim().split('\n').filter(l => l.trim().length > 0)
-      const border = '──────────────────────────────────────────────────────────'
-
-      if (!verbose && lines.length > 2) {
-        const preview = lines[0].slice(0, 75)
-        return [
-          chalk.magenta(`\n╭─ 🧠 Thinking `) + chalk.magenta.bold(`[Collapsed: ${words} words] `) + chalk.magenta(border.slice(28)) + chalk.magenta('╮'),
-          chalk.gray(`│ `) + chalk.italic.white(preview + (preview.length < lines[0].length ? '...' : '')),
-          chalk.gray(`│ `) + chalk.dim(`... [${lines.length - 1} lines collapsed • toggle with /verbose]`),
-          chalk.magenta(`╰${border}╯`),
-        ].join('\n')
-      }
-
-      return [
-        chalk.magenta(`\n╭─ 🧠 Thinking `) + chalk.magenta.bold(`[${words} words] `) + chalk.magenta(border.slice(16)) + chalk.magenta('╮'),
-        ...lines.map(l => chalk.gray(`│ `) + chalk.italic.white(l)),
-        chalk.magenta(`╰${border}╯`),
-      ].join('\n')
-    }
-
-    const formatToolCallBox = (name: string, args: any): string => {
-      const border = '──────────────────────────────────────────────────────────'
-      const argStr = JSON.stringify(args)
-      const argPreview = argStr.length > 80 ? argStr.slice(0, 77) + '...' : argStr
-      return [
-        chalk.cyan(`\n╭─ 🛠️ Tool: `) + chalk.bold.cyan(name.padEnd(20)) + chalk.cyan(border.slice(30)) + chalk.cyan('╮'),
-        chalk.gray(`│ `) + chalk.yellow(`▶ Args: `) + chalk.dim(argPreview),
-      ].join('\n')
-    }
-
-    const formatToolResultBox = (name: string, result: string, verbose = false): string => {
-      const border = '──────────────────────────────────────────────────────────'
-      const lines = result.trim().split('\n')
-      const lineCount = lines.length
-
-      if (!verbose && lineCount > 4) {
-        const shown = lines.slice(0, 4)
-        return [
-          chalk.gray(`│ `) + chalk.green(`✔ Output: `) + chalk.dim(`[Collapsed - ${lineCount} lines total]`),
-          ...shown.map(l => chalk.gray(`│   `) + chalk.dim(l.length > 90 ? l.slice(0, 87) + '...' : l)),
-          chalk.gray(`│   `) + chalk.dim(`... [${lineCount - 4} more lines collapsed • toggle with /verbose]`),
-          chalk.cyan(`╰${border}╯\n`),
-        ].join('\n')
-      }
-
-      return [
-        chalk.gray(`│ `) + chalk.green(`✔ Output: `) + chalk.dim(`[${lineCount} lines]`),
-        ...lines.slice(0, 30).map(l => chalk.gray(`│   `) + chalk.dim(l.length > 90 ? l.slice(0, 87) + '...' : l)),
-        ...(lineCount > 30 ? [chalk.gray(`│   `) + chalk.dim(`... [${lineCount - 30} more lines truncated • toggle with /verbose]`)] : []),
-        chalk.cyan(`╰${border}╯\n`),
-      ].join('\n')
-    }
-
-    const formatTerminalMarkdown = (content: string): string => {
-      let formatted = content.replace(/```([a-zA-Z0-9_-]*)\n([\s\S]*?)```/g, (_, lang, code) => {
-        const border = '──────────────────────────────────────────────────────────'
-        const langTag = lang ? `[${lang}] ` : ''
-        const lines = code.trimEnd().split('\n')
-        return [
-          chalk.dim(`\n┌─ `) + chalk.cyan.bold(langTag) + chalk.dim(border.slice(langTag.length + 3)) + chalk.dim(`┐`),
-          ...lines.map(l => chalk.dim(`│ `) + chalk.white(l)),
-          chalk.dim(`└${border}┘\n`),
-        ].join('\n')
-      })
-
-      formatted = formatted.replace(/^(#{1,3})\s+(.*)$/gm, (_, hashes, title) => {
-        return chalk.bold.cyan(`\n${hashes} ${title}`)
-      })
-
-      formatted = formatted.replace(/\*\*(.*?)\*\*/g, (_, text) => chalk.bold(text))
-      formatted = formatted.replace(/`([^`\n]+)`/g, (_, code) => chalk.yellow(`\`${code}\``))
-      return formatted
-    }
-
     const runAgentWithUi = async (rawPrompt: string, isResuming = false) => {
       const userPrompt = resolveFileMentions(rawPrompt)
       // ── Option 1: ULTRAPLINIAN Race Mode ──────────────────────────────
@@ -377,17 +296,17 @@ program
             stopSpinner()
             const costTag = costSummary ? chalk.dim(` [${costSummary}]`) : ''
             activeSpinner = ora({
-              text: chalk.bold.blue(`[Step ${turn}] `) + chalk.yellow(action) + (detail ? chalk.gray(` - ${detail}`) : '') + costTag,
+              text: chalk.bold.cyan(`[Step ${turn}] `) + chalk.white(action) + (detail ? chalk.dim(` • ${detail}`) : '') + costTag,
               color: 'cyan',
             }).start()
           },
           onThinking: (thought: string) => {
             stopSpinner()
-            console.log(formatThinkingBox(thought, isVerbose))
+            console.log(renderThinkingBox(thought, isVerbose))
           },
           onToolCall: (name: string, args: any) => {
             stopSpinner()
-            console.log(formatToolCallBox(name, args))
+            console.log(renderToolCallBox(name, args))
             activeSpinner = ora({
               text: chalk.cyan(`Executing ${name}...`),
               color: 'cyan',
@@ -395,7 +314,7 @@ program
           },
           onToolResult: (name: string, result: string) => {
             stopSpinner()
-            console.log(formatToolResultBox(name, result, isVerbose))
+            console.log(renderToolResultBox(name, result, isVerbose))
           },
           onTodoUpdate: (todos) => {
             const completed = todos.filter(t => t.status === 'completed').length
@@ -435,13 +354,12 @@ program
         })
 
         stopSpinner()
-        const cleanFinalAnswer = result.finalAnswer.replace(/<(thinking|thought|reasoning)>[\s\S]*?<\/\1>/gi, '').trim()
-        console.log(chalk.bold.green(`\n══════════════════ [G0DM0D3 RESPONSE] ══════════════════`))
-        console.log(formatTerminalMarkdown(cleanFinalAnswer || result.finalAnswer))
-        console.log(chalk.bold.green(`─────────────────────────────────────────────────────────`))
-        console.log(chalk.bold.cyan(`📊 Usage & Cost: `) + chalk.white(result.costSummary))
-        console.log(chalk.gray(`💾 Session saved: ${result.sessionId} (Resume with: godmod3-agent --resume ${result.sessionId})`))
-        console.log(chalk.bold.green(`═════════════════════════════════════════════════════════\n`))
+        console.log('\n' + renderResponseCard({
+          content: result.finalAnswer,
+          model: resolvedModel,
+          costSummary: result.costSummary,
+          sessionId: result.sessionId,
+        }))
       } catch (err: any) {
         stopSpinner()
         console.error(chalk.bold.red(`\nAgent Error: `) + err.message)
@@ -450,6 +368,13 @@ program
     }
 
     if (initialTask) {
+      console.log(renderBanner({
+        version: '1.3.0',
+        model: resolvedModel,
+        profile: options.profile,
+        workdir: process.cwd(),
+        contextWindow: MODEL_PROFILES[options.profile as ModelProfileName]?.contextWindow || '1M tokens',
+      }))
       await runAgentWithUi(initialTask, Boolean(resumedSession))
     } else {
       // Interactive REPL Mode
@@ -484,14 +409,15 @@ program
         { cmd: 'exit', desc: 'Exit the interactive agent' },
       ]
 
-      console.log(chalk.bold.cyan(`\n🤖 Interactive Agent REPL`))
-      console.log(chalk.gray(`Type tasks directly for autonomous execution, or use slash commands below:`))
-      console.log(chalk.dim(`(Persistent shell history active: use ↑ / ↓ arrows to cycle past commands across sessions)\n`))
-      console.log(chalk.bold.magenta(`Commands Menu:`) + chalk.gray(` (Press Tab on "/" for live autocomplete)\n`))
-      for (const c of REPL_COMMANDS.slice(0, 10)) {
-        console.log(`  ${chalk.bold.green(c.cmd.padEnd(12))} ${chalk.white(c.desc)}`)
-      }
-      console.log(chalk.dim(`  ... type /help to view all ${REPL_COMMANDS.length} commands.\n`))
+      console.log(renderBanner({
+        version: '1.3.0',
+        model: resolvedModel,
+        profile: options.profile,
+        workdir: process.cwd(),
+        contextWindow: MODEL_PROFILES[options.profile as ModelProfileName]?.contextWindow || '1M tokens',
+      }))
+      console.log(chalk.gray(`\n  ⚡ Enter task to run autonomously • Type ${chalk.cyan('/help')} or ${chalk.cyan('/')} for command palette`))
+      console.log(chalk.dim(`  ⚡ Press Tab on "/" for live autocomplete • Use ↑ / ↓ for persistent shell history\n`))
 
       const persistedHistory = loadCliHistory()
       let multilineBuffer: string[] = []
@@ -505,13 +431,6 @@ program
           completer: (line: string) => {
             const trimmed = line.trim()
             const hits = REPL_COMMANDS.filter(c => c.cmd.startsWith(trimmed))
-            if (trimmed === '/' || hits.length > 0) {
-              console.log(chalk.bold.cyan('\n\n── 🤖 Slash Commands Menu (Press Enter to execute) ─────────────────'))
-              hits.forEach(h => {
-                console.log(`  ${chalk.bold.green(h.cmd.padEnd(14))} ${chalk.white(h.desc)}`)
-              })
-              console.log(chalk.bold.cyan('───────────────────────────────────────────────────────────────────\n'))
-            }
             return [hits.map(h => h.cmd), line]
           },
         })
@@ -583,12 +502,8 @@ program
           return
         }
 
-        if (trimmed === '/help' || trimmed === 'help') {
-          console.log(chalk.bold.cyan('\nAvailable REPL Commands:'))
-          for (const c of REPL_COMMANDS) {
-            console.log(`  ${chalk.bold.green(c.cmd.padEnd(14))} ${chalk.white(c.desc)}`)
-          }
-          console.log('')
+        if (trimmed === '/help' || trimmed === 'help' || trimmed === '/' || trimmed === '/menu' || trimmed === '/commands') {
+          console.log('\n' + renderCommandPalette() + '\n')
           rl.prompt()
           return
         }
@@ -880,49 +795,11 @@ program
           return
         }
 
-        if (trimmed === '/' || trimmed === '/menu' || trimmed === '/commands') {
-          rl.close()
-          if (process.stdin.isTTY) {
-            try {
-              const selectedCmd = await search({
-                message: chalk.bold.cyan('🤖 Choose Agent Slash Command:'),
-                source: async (input) => {
-                  const query = (input || '').trim().toLowerCase()
-                  const filtered = REPL_COMMANDS.filter(c =>
-                    !query ||
-                    c.cmd.toLowerCase().includes(query) ||
-                    c.desc.toLowerCase().includes(query)
-                  )
-                  return filtered.map(c => ({
-                    name: `${chalk.bold.green(c.cmd.padEnd(14))} ${chalk.white(c.desc)}`,
-                    value: c.cmd,
-                    description: c.desc,
-                  }))
-                },
-              })
-              if (selectedCmd) {
-                startRepl(selectedCmd)
-                return
-              }
-            } catch {
-              // canceled
-            }
-          } else {
-            console.log(chalk.bold.cyan('\n── 🤖 Agent Slash Commands Menu ────────────────────────────────────'))
-            for (const c of REPL_COMMANDS) {
-              console.log(`  ${chalk.bold.green(c.cmd.padEnd(14))} ${chalk.white(c.desc)}`)
-            }
-            console.log(chalk.bold.cyan('───────────────────────────────────────────────────────────────────\n'))
-          }
-          startRepl()
-          return
-        }
-
         if (trimmed.startsWith('/')) {
           console.log(chalk.bold.red(`\n❌ Unknown slash command "${trimmed}".`))
           console.log(chalk.gray(`Slash commands are executed directly as agent operations and are never sent to the model for conversational analysis.`))
           console.log(chalk.cyan(`Available commands: ${REPL_COMMANDS.filter(c => c.cmd.startsWith('/')).map(c => c.cmd).join(', ')}`))
-          console.log(chalk.gray(`Type /help for full details or type "/" and press Enter for the interactive menu.\n`))
+          console.log(chalk.gray(`Type /help for full details or type "/" for the command palette.\n`))
           rl.prompt()
           return
         }
