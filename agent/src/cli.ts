@@ -25,7 +25,7 @@ ${chalk.bold.cyan('██ ▄███ ██  ██  ██   ██ ██  �
 ${chalk.bold.cyan('██  ██  ██  ██  ██   ██ ██     ██  ██  ██  ██   ██      ██ ')}
 ${chalk.bold.green(' ██████  ████   ██████  ██     ██   ████   ██████  ██████ ')}
 ${chalk.gray('─────────────────────────────────────────────────────────────')}
-${chalk.bold.white(' ░▒▓█  G0DM0D3 AUTONOMOUS AGENT // LIBERATED REAC ENGINE  █▓▒░')}
+${chalk.bold.white(' ░▒▓█  G0DM0D3 AUTONOMOUS AGENT v1.2.0 // LIBERATED REAC ENGINE  █▓▒░')}
 ${chalk.gray('─────────────────────────────────────────────────────────────')}
 `
 
@@ -68,7 +68,7 @@ const program = new Command()
 program
   .name('godmod3-agent')
   .description('Autonomous ReAct agent powered by G0DM0D3 API')
-  .version('1.1.0')
+  .version('1.2.0')
   .argument('[task...]', 'Task or objective for the agent to execute')
   .option('-p, --profile <profile>', 'Model cost profile (glm, deepseek, qwen, cheap, smart, local)', 'glm')
   .option('-m, --model <model>', 'Direct model ID override')
