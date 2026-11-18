@@ -5,7 +5,7 @@ import readline from 'readline'
 import chalk from 'chalk'
 import { GodModeAgent } from './agent/agent'
 import { GodModeClient } from './client/godmode-client'
-import { AGENT_SYSTEM_PROMPT } from './agent/prompt'
+import { AGENT_SYSTEM_PROMPT, resolveFileMentions } from './agent/prompt'
 import { config, MODEL_PROFILES, ModelProfileName } from './config'
 import { listSessions, loadSession } from './agent/session-manager'
 import { getActiveTodos } from './tools/todos'
@@ -162,7 +162,8 @@ program
       session: resumedSession || undefined,
     })
 
-    const runAgentWithUi = async (userPrompt: string, isResuming = false) => {
+    const runAgentWithUi = async (rawPrompt: string, isResuming = false) => {
+      const userPrompt = resolveFileMentions(rawPrompt)
       // ── Option 1: ULTRAPLINIAN Race Mode ──────────────────────────────
       if (options.race) {
         const tier = typeof options.race === 'string' ? options.race : 'fast'

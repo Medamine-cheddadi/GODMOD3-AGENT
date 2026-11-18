@@ -1,7 +1,7 @@
 import { ChatMessage, AgentRunOptions, AgentSession } from './types'
 import { GodModeClient } from '../client/godmode-client'
 import { getAllToolDefinitions, dispatchToolCall } from '../tools'
-import { AGENT_SYSTEM_PROMPT } from './prompt'
+import { AGENT_SYSTEM_PROMPT, getProjectContext } from './prompt'
 import { truncateToolOutput, compactHistory } from './context-manager'
 import { CostTracker } from './cost-tracker'
 import { config, MODEL_PROFILES, getEquivalentPeerModels, MODEL_CATALOG } from '../config'
@@ -73,7 +73,8 @@ export class GodModeAgent {
     this.sessionCreatedAt = Date.now()
     this.currentGoal = ''
     this.completedTasks = []
-    this.messages = [{ role: 'system', content: AGENT_SYSTEM_PROMPT }]
+    const projectContext = getProjectContext()
+    this.messages = [{ role: 'system', content: AGENT_SYSTEM_PROMPT + projectContext }]
     setActiveTodos([])
     setActiveMemory({})
   }

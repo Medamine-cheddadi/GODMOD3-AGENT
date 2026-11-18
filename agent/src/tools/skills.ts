@@ -1,6 +1,10 @@
 import fs from 'fs'
 import path from 'path'
+import { fileURLToPath } from 'url'
 import { ToolDefinition } from '../agent/types'
+
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
 
 function getSkillDirectories(): string[] {
   const dirs = [
@@ -9,6 +13,8 @@ function getSkillDirectories(): string[] {
     path.resolve(__dirname, '../../../skills'),
     path.resolve(__dirname, '../../skills'),
     path.resolve(__dirname, '../skills'),
+    '/Users/elamine/dev/G0DM0D3/skills',
+    '/Users/elamine/dev/hack_bot/skills',
     '/Users/elamine/dev/custom-skills',
   ]
   return [...new Set(dirs)].filter(d => fs.existsSync(d))
