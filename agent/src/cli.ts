@@ -12,6 +12,8 @@ import { getActiveTodos } from './tools/todos'
 import { getActiveMemory } from './tools/memory'
 import { gitDiffHandler, undoChangesHandler } from './tools/git'
 import { spawnSubagentHandler, SUBAGENT_PROMPTS } from './tools/subagent'
+import { ultraplinianRaceHandler } from './tools/ultraplinian'
+import { manageSkillsHandler } from './tools/skills'
 
 const banner = `
 ${chalk.bold.magenta(' ▄████  ██████  ██████  ███▄ ▄███  ██████  ██████  ██████ ')}
@@ -309,12 +311,53 @@ program
       await runAgentWithUi(initialTask, Boolean(resumedSession))
     } else {
       // Interactive REPL Mode
-      console.log(chalk.cyan(`Interactive mode. Enter your task (or type "/help" for commands):`))
-      console.log(chalk.gray(`Commands: /todos, /memory, /sessions, /resume [id], /clear, exit\n`))
+      const REPL_COMMANDS = [
+        { cmd: '/pentest', desc: 'Launch offensive security pentester subagent on target/task' },
+        { cmd: '/research', desc: 'Launch deep research subagent to audit code and docs' },
+        { cmd: '/code', desc: 'Launch autonomous coding subagent to implement code' },
+        { cmd: '/plan', desc: 'Launch strategic planner subagent to decompose objectives' },
+        { cmd: '/spawn', desc: 'Spawn subagent: /spawn <role> <task> (coder, pentester...)' },
+        { cmd: '/subagents', desc: 'List all available specialist subagent roles' },
+        { cmd: '/race', desc: 'Race prompt across models with ULTRAPLINIAN: /race <prompt>' },
+        { cmd: '/skills', desc: 'Browse and inspect 40+ pentest skills runbooks' },
+        { cmd: '/diff', desc: 'View git diff of modified files in active session' },
+        { cmd: '/undo', desc: 'Rollback file changes made in the last turn' },
+        { cmd: '/checkpoints', desc: 'List turn snapshots in the active session' },
+        { cmd: '/model', desc: 'Switch model profile (glm, deepseek, qwen, smart, cheap)' },
+        { cmd: '/models', desc: 'List all available model profiles & active model' },
+        { cmd: '/todos', desc: 'View current task plan / checklist' },
+        { cmd: '/memory', desc: 'View saved persistent session memory' },
+        { cmd: '/sessions', desc: 'List saved session checkpoints' },
+        { cmd: '/resume', desc: 'Resume previous session: /resume [sessionId]' },
+        { cmd: '/clear', desc: 'Reset agent memory and start fresh session' },
+        { cmd: '/help', desc: 'Display this commands help menu' },
+        { cmd: 'exit', desc: 'Exit the interactive agent' },
+      ]
+
+      console.log(chalk.bold.cyan(`\n🤖 Interactive Agent REPL`))
+      console.log(chalk.gray(`Type tasks directly for autonomous execution, or use slash commands below:`))
+      console.log(chalk.bold.magenta(`Commands Menu:`) + chalk.gray(` (Press Tab on "/" for live autocomplete)\n`))
+      for (const c of REPL_COMMANDS.slice(0, 10)) {
+        console.log(`  ${chalk.bold.green(c.cmd.padEnd(12))} ${chalk.white(c.desc)}`)
+      }
+      console.log(chalk.dim(`  ... type /help to view all ${REPL_COMMANDS.length} commands.\n`))
+
       const rl = readline.createInterface({
         input: process.stdin,
         output: process.stdout,
         prompt: chalk.bold.magenta('godmod3> '),
+        completer: (line: string) => {
+          const trimmed = line.trim()
+          const hits = REPL_COMMANDS.filter(c => c.cmd.startsWith(trimmed))
+          if (trimmed === '/' || hits.length > 0) {
+            console.log(chalk.bold.cyan('\n\n── 🤖 Slash Commands Menu (Press Enter to execute) ─────────────────'))
+            hits.forEach(h => {
+              console.log(`  ${chalk.bold.green(h.cmd.padEnd(14))} ${chalk.white(h.desc)}`)
+            })
+            console.log(chalk.bold.cyan('───────────────────────────────────────────────────────────────────\n'))
+          }
+          return [hits.map(h => h.cmd), line]
+        },
       })
 
       rl.prompt()
@@ -328,19 +371,104 @@ program
 
         if (trimmed === '/help' || trimmed === 'help') {
           console.log(chalk.bold.cyan('\nAvailable REPL Commands:'))
-          console.log(`  ${chalk.bold.green('/spawn <role> <task>')} Launch a specialist subagent (coder, pentester, researcher...)`)
-          console.log(`  ${chalk.bold.green('/subagents')}          List available specialist subagent roles`)
-          console.log(`  ${chalk.bold.green('/diff [file]')}        View working tree git diff for session changes`)
-          console.log(`  ${chalk.bold.green('/undo')}               Rollback file modifications made in the last turn`)
-          console.log(`  ${chalk.bold.green('/checkpoints')}        List all turn snapshots in the active session`)
-          console.log(`  ${chalk.bold.green('/model [profile|id]')} Switch active agent model on the fly (e.g. /model deepseek)`)
-          console.log(`  ${chalk.bold.green('/models')}             List all available model profiles & active model`)
-          console.log(`  ${chalk.bold.green('/todos')}              View active task plan / checklist`)
-          console.log(`  ${chalk.bold.green('/memory')}             View saved session memory & key findings`)
-          console.log(`  ${chalk.bold.green('/sessions')}           List all saved session checkpoints`)
-          console.log(`  ${chalk.bold.green('/resume [id]')}        Resume previous session by ID or latest`)
-          console.log(`  ${chalk.bold.green('/clear')}              Reset agent memory and start fresh session`)
-          console.log(`  ${chalk.bold.green('exit / quit')}         Exit the interactive agent\n`)
+          for (const c of REPL_COMMANDS) {
+            console.log(`  ${chalk.bold.green(c.cmd.padEnd(14))} ${chalk.white(c.desc)}`)
+          }
+          console.log('')
+          rl.prompt()
+          return
+        }
+
+        // Direct Pentest Specialist Agent command
+        if (trimmed === '/pentest' || trimmed.startsWith('/pentest ')) {
+          const subTask = trimmed.replace(/^\/pentest\s*/, '').trim()
+          if (!subTask) {
+            console.log(chalk.yellow('Usage: /pentest <target or vulnerability to test>\nExample: /pentest test upload endpoint for extension bypass\n'))
+            rl.prompt()
+            return
+          }
+          console.log(chalk.bold.magenta(`\n🛡️ [PENTESTER SUBAGENT] Launching offensive security mission: "${subTask}"`))
+          const out = await spawnSubagentHandler({ task: subTask, role: 'pentester', max_turns: 20 })
+          console.log(chalk.bold.green(`\n${out}\n`))
+          rl.prompt()
+          return
+        }
+
+        // Direct Research Specialist Agent command
+        if (trimmed === '/research' || trimmed.startsWith('/research ')) {
+          const subTask = trimmed.replace(/^\/research\s*/, '').trim()
+          if (!subTask) {
+            console.log(chalk.yellow('Usage: /research <objective or file to audit>\nExample: /research inspect authentication flow in api/routes\n'))
+            rl.prompt()
+            return
+          }
+          console.log(chalk.bold.magenta(`\n🔍 [RESEARCHER SUBAGENT] Launching deep investigation: "${subTask}"`))
+          const out = await spawnSubagentHandler({ task: subTask, role: 'researcher', max_turns: 15 })
+          console.log(chalk.bold.green(`\n${out}\n`))
+          rl.prompt()
+          return
+        }
+
+        // Direct Coding Specialist Agent command
+        if (trimmed === '/code' || trimmed.startsWith('/code ') || trimmed === '/coder' || trimmed.startsWith('/coder ')) {
+          const subTask = trimmed.replace(/^\/(code|coder)\s*/, '').trim()
+          if (!subTask) {
+            console.log(chalk.yellow('Usage: /code <feature or code to implement>\nExample: /code write a token bucket rate limiter in scratch/limiter.ts\n'))
+            rl.prompt()
+            return
+          }
+          console.log(chalk.bold.magenta(`\n💻 [CODER SUBAGENT] Launching implementation task: "${subTask}"`))
+          const out = await spawnSubagentHandler({ task: subTask, role: 'coder', max_turns: 20 })
+          console.log(chalk.bold.green(`\n${out}\n`))
+          rl.prompt()
+          return
+        }
+
+        // Direct Strategic Planning Agent command
+        if (trimmed === '/plan' || trimmed.startsWith('/plan ')) {
+          const subTask = trimmed.replace(/^\/plan\s*/, '').trim()
+          if (!subTask) {
+            console.log(chalk.yellow('Usage: /plan <high-level objective>\nExample: /plan architect migration to distributed redis caching\n'))
+            rl.prompt()
+            return
+          }
+          console.log(chalk.bold.magenta(`\n📐 [PLANNER SUBAGENT] Decomposing objective into milestones: "${subTask}"`))
+          const out = await spawnSubagentHandler({ task: subTask, role: 'planner', max_turns: 10 })
+          console.log(chalk.bold.green(`\n${out}\n`))
+          rl.prompt()
+          return
+        }
+
+        // Direct ULTRAPLINIAN Race command
+        if (trimmed === '/race' || trimmed.startsWith('/race ')) {
+          const prompt = trimmed.replace(/^\/race\s*/, '').trim()
+          if (!prompt) {
+            console.log(chalk.yellow('Usage: /race <prompt to evaluate across models>\nExample: /race what is the best payload to bypass Cloudflare WAF for SVG XSS?\n'))
+            rl.prompt()
+            return
+          }
+          console.log(chalk.bold.magenta(`\n🌋 [ULTRAPLINIAN RACE] Racing prompt across frontier models...`))
+          const raceResult = await ultraplinianRaceHandler({ prompt, tier: 'fast' })
+          console.log(chalk.bold.green(`\n${raceResult}\n`))
+          rl.prompt()
+          return
+        }
+
+        // Direct Skills Inspection / Runbook command
+        if (trimmed === '/skills' || trimmed.startsWith('/skills ') || trimmed.startsWith('/skill ')) {
+          const parts = trimmed.split(' ')
+          const skillName = parts[1]?.trim()
+          if (!skillName || skillName === 'list') {
+            const listOutput = await manageSkillsHandler({ action: 'list' })
+            console.log(chalk.bold.cyan(`\nAvailable Pentesting & Agent Skills:\n`))
+            console.log(listOutput)
+            console.log(chalk.gray(`\nLoad a specific skill runbook with: /skill <name>\n`))
+          } else {
+            console.log(chalk.bold.cyan(`\nLoading Skill [${skillName}]...`))
+            const skillContent = await manageSkillsHandler({ action: 'load', skill_name: skillName })
+            console.log(chalk.white(skillContent))
+            console.log('')
+          }
           rl.prompt()
           return
         }
@@ -491,6 +619,15 @@ program
         if (trimmed === '/clear' || trimmed === 'clear' || trimmed === '/reset' || trimmed === 'reset') {
           agent.reset()
           console.log(chalk.green('✓ Agent memory reset to fresh state.\n'))
+          rl.prompt()
+          return
+        }
+
+        if (trimmed.startsWith('/')) {
+          console.log(chalk.bold.red(`\n❌ Unknown slash command "${trimmed}".`))
+          console.log(chalk.gray(`Slash commands are executed directly as agent operations and are never sent to the model for conversational analysis.`))
+          console.log(chalk.cyan(`Available commands: ${REPL_COMMANDS.filter(c => c.cmd.startsWith('/')).map(c => c.cmd).join(', ')}`))
+          console.log(chalk.gray(`Type /help for full details or press Tab on "/" for the live menu.\n`))
           rl.prompt()
           return
         }
