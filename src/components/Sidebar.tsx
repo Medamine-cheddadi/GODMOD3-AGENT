@@ -11,7 +11,13 @@ import {
   ChevronRight,
   Zap,
   Skull,
-  Terminal
+  Terminal,
+  Shield,
+  Search,
+  Code,
+  Brain,
+  Flame,
+  BookOpen,
 } from 'lucide-react'
 import { PersonaSelector } from './PersonaSelector'
 import { ModelSelector } from './ModelSelector'
@@ -26,6 +32,7 @@ export function Sidebar({ isOpen, onToggle }: SidebarProps) {
     conversations,
     currentConversationId,
     createConversation,
+    addMessage,
     selectConversation,
     deleteConversation,
     setShowSettings,
@@ -91,6 +98,96 @@ export function Sidebar({ isOpen, onToggle }: SidebarProps) {
               <Plus className="w-4 h-4" />
               <span>New Chat</span>
             </button>
+
+            {/* Quick Specialist Agent Launch */}
+            <div className="pt-3">
+              <div className="text-[10px] font-mono theme-secondary uppercase tracking-wider mb-1.5 flex items-center justify-between">
+                <span>Specialist Agents</span>
+                <span className="text-cyan-400">/launch</span>
+              </div>
+              <div className="grid grid-cols-5 gap-1 text-center">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const convId = createConversation()
+                    addMessage(convId, {
+                      role: 'assistant',
+                      content: '### 🛡️ PENTEST AGENT READY\n\nEnter your target or vulnerability to audit below:\n\n*Example:* `/pentest audit upload endpoint for file bypass`',
+                      model: 'system',
+                    })
+                  }}
+                  title="Pentest Specialist Agent (/pentest)"
+                  className="p-1.5 rounded-lg bg-red-950/20 border border-red-500/30 hover:border-red-500 text-red-400 flex flex-col items-center justify-center transition-all"
+                >
+                  <Shield className="w-3.5 h-3.5" />
+                  <span className="text-[9px] font-mono mt-0.5">Pentest</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const convId = createConversation()
+                    addMessage(convId, {
+                      role: 'assistant',
+                      content: '### 🔍 RESEARCH AGENT READY\n\nEnter your research objective or file to investigate below:\n\n*Example:* `/research inspect api/routes/chat.ts for security flaws`',
+                      model: 'system',
+                    })
+                  }}
+                  title="Research Specialist Agent (/research)"
+                  className="p-1.5 rounded-lg bg-cyan-950/20 border border-cyan-500/30 hover:border-cyan-500 text-cyan-400 flex flex-col items-center justify-center transition-all"
+                >
+                  <Search className="w-3.5 h-3.5" />
+                  <span className="text-[9px] font-mono mt-0.5">Audit</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const convId = createConversation()
+                    addMessage(convId, {
+                      role: 'assistant',
+                      content: '### 💻 CODER AGENT READY\n\nEnter the code, feature, or tests you need to build:\n\n*Example:* `/code write a robust rate limiter with sliding window`',
+                      model: 'system',
+                    })
+                  }}
+                  title="Coding Specialist Agent (/code)"
+                  className="p-1.5 rounded-lg bg-emerald-950/20 border border-emerald-500/30 hover:border-emerald-500 text-emerald-400 flex flex-col items-center justify-center transition-all"
+                >
+                  <Code className="w-3.5 h-3.5" />
+                  <span className="text-[9px] font-mono mt-0.5">Code</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const convId = createConversation()
+                    addMessage(convId, {
+                      role: 'assistant',
+                      content: '### 📐 PLANNER AGENT READY\n\nEnter your complex mission or architecture blueprint to plan:\n\n*Example:* `/plan architect migration to distributed microservices`',
+                      model: 'system',
+                    })
+                  }}
+                  title="Planner Specialist Agent (/plan)"
+                  className="p-1.5 rounded-lg bg-purple-950/20 border border-purple-500/30 hover:border-purple-500 text-purple-400 flex flex-col items-center justify-center transition-all"
+                >
+                  <Brain className="w-3.5 h-3.5" />
+                  <span className="text-[9px] font-mono mt-0.5">Plan</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const convId = createConversation()
+                    addMessage(convId, {
+                      role: 'assistant',
+                      content: '### 🌋 ULTRAPLINIAN RACE READY\n\nEnter the challenge to race across multiple frontier models:\n\n*Example:* `/race what is the cleanest payload for DOM XSS in modern React?`',
+                      model: 'system',
+                    })
+                  }}
+                  title="ULTRAPLINIAN Multi-Model Race (/race)"
+                  className="p-1.5 rounded-lg bg-orange-950/20 border border-orange-500/30 hover:border-orange-500 text-orange-400 flex flex-col items-center justify-center transition-all"
+                >
+                  <Flame className="w-3.5 h-3.5" />
+                  <span className="text-[9px] font-mono mt-0.5">Race</span>
+                </button>
+              </div>
+            </div>
           </div>
 
           {/* Model & Persona Selectors */}

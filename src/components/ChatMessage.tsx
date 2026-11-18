@@ -73,6 +73,29 @@ export function ChatMessage({ message }: ChatMessageProps) {
     ? personas.find(p => p.id === (message.persona || currentConversation?.persona)) || personas[0]
     : null
 
+  // Detect Agent badge
+  let agentBadge: { label: string; color: string } | null = null
+  let displayBody = displayContent
+
+  if (isUser) {
+    if (displayContent.startsWith('🛡️ [PENTEST AGENT]')) {
+      agentBadge = { label: '🛡️ PENTEST SPECIALIST AGENT', color: 'bg-red-500/20 text-red-300 border-red-500/40' }
+      displayBody = displayContent.replace('🛡️ [PENTEST AGENT]', '').trim()
+    } else if (displayContent.startsWith('🔍 [RESEARCH AGENT]')) {
+      agentBadge = { label: '🔍 RESEARCH SPECIALIST AGENT', color: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40' }
+      displayBody = displayContent.replace('🔍 [RESEARCH AGENT]', '').trim()
+    } else if (displayContent.startsWith('💻 [CODER AGENT]')) {
+      agentBadge = { label: '💻 CODING SPECIALIST AGENT', color: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40' }
+      displayBody = displayContent.replace('💻 [CODER AGENT]', '').trim()
+    } else if (displayContent.startsWith('📐 [PLANNER AGENT]')) {
+      agentBadge = { label: '📐 STRATEGIC PLANNER AGENT', color: 'bg-purple-500/20 text-purple-300 border-purple-500/40' }
+      displayBody = displayContent.replace('📐 [PLANNER AGENT]', '').trim()
+    } else if (displayContent.startsWith('🌋 [ULTRAPLINIAN RACE]')) {
+      agentBadge = { label: '🌋 ULTRAPLINIAN CONSENSUS RACE', color: 'bg-orange-500/20 text-orange-300 border-orange-500/40' }
+      displayBody = displayContent.replace('🌋 [ULTRAPLINIAN RACE]', '').trim()
+    }
+  }
+
   const handleCopy = async () => {
     await navigator.clipboard.writeText(message.content)
     setCopied(true)
@@ -111,6 +134,15 @@ export function ChatMessage({ message }: ChatMessageProps) {
           }
         `}
       >
+        {/* Agent badge if applicable */}
+        {agentBadge && (
+          <div className="mb-2">
+            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-mono font-bold border ${agentBadge.color}`}>
+              {agentBadge.label}
+            </span>
+          </div>
+        )}
+
         {/* Header */}
         <div className="flex items-center justify-between mb-2 text-xs theme-secondary">
           <span className="font-semibold">
@@ -144,28 +176,13 @@ export function ChatMessage({ message }: ChatMessageProps) {
               code({ node, className, children, ...props }) {
                 const match = /language-(\w+)/.exec(className || '')
                 const inline = !match
+                const codeString = String(children).replace(/\n$/, '')
 
                 return !inline ? (
-                  <SyntaxHighlighter
-                    style={atomDark}
-                    language={match?.[1] || 'text'}
-                    PreTag="div"
-                    customStyle={{
-                      background: 'var(--dim)',
-                      border: '1px solid var(--primary)',
-                      borderRadius: '4px',
-                      fontSize: '0.875rem'
-                    }}
-                  >
-                    {String(children).replace(/\n$/, '')}
-                  </SyntaxHighlighter>
+                  <CodeBlock language={match?.[1] || 'text'} code={codeString} />
                 ) : (
                   <code
-                    className="px-1 py-0.5 rounded text-sm"
-                    style={{
-                      background: 'var(--dim)',
-                      color: 'var(--primary)'
-                    }}
+                    className="px-1.5 py-0.5 rounded text-xs font-mono bg-cyan-950/40 text-cyan-300 border border-cyan-500/20"
                     {...props}
                   >
                     {children}
@@ -202,7 +219,7 @@ export function ChatMessage({ message }: ChatMessageProps) {
               }
             }}
           >
-            {displayContent}
+            {displayBody}
           </ReactMarkdown>
         </div>
 
@@ -395,6 +412,46 @@ export function ChatMessage({ message }: ChatMessageProps) {
           </div>
         )}
       </div>
+    </div>
+  )
+}
+
+function CodeBlock({ language, code }: { language: string; code: string }) {
+  const [copied, setCopied] = useState(false)
+
+  const handleCopyCode = async () => {
+    await navigator.clipboard.writeText(code)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
+  return (
+    <div className="relative group my-3 rounded-lg overflow-hidden border border-theme-primary/30 bg-theme-bg shadow-lg">
+      <div className="flex items-center justify-between px-3.5 py-1.5 bg-theme-dim/90 border-b border-theme-primary/20 text-xs font-mono">
+        <span className="text-cyan-400 font-semibold uppercase tracking-wider">{language}</span>
+        <button
+          onClick={handleCopyCode}
+          className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-theme-bg/60 border border-theme-primary/20 hover:border-cyan-400/50 text-[11px] text-gray-300 hover:text-cyan-300 transition-all"
+          aria-label="Copy code block"
+        >
+          {copied ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
+          <span>{copied ? 'Copied!' : 'Copy Code'}</span>
+        </button>
+      </div>
+      <SyntaxHighlighter
+        style={atomDark}
+        language={language}
+        PreTag="div"
+        customStyle={{
+          margin: 0,
+          background: 'transparent',
+          fontSize: '0.85rem',
+          padding: '0.85rem',
+          lineHeight: '1.45',
+        }}
+      >
+        {code}
+      </SyntaxHighlighter>
     </div>
   )
 }
