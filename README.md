@@ -13,17 +13,17 @@ An autonomous, liberated ReAct agent CLI and multi-model intelligence pipeline. 
 git clone https://github.com/Medamine-cheddadi/GODMOD3-AGENT.git
 cd GODMOD3-AGENT
 
-# Install dependencies and build
+# Install dependencies and compile
 npm install
 npm run build
 
-# Link globally so you can run from any folder
+# Link globally to run from any directory
 npm link --force
 ```
 
-### Running the Agent
+### Running the Agent CLI
 
-Start the interactive terminal REPL:
+Launch the interactive terminal REPL:
 
 ```bash
 godmode
@@ -31,22 +31,22 @@ godmode
 godmod3-agent
 ```
 
-Or pass a task directly:
+Or pass a task directly for single-command autonomous execution:
 
 ```bash
-godmode "Audit git status and review changed files"
+godmode "Audit git status, review changed files, and summarize branch health"
 ```
 
 ---
 
-## 🎮 CLI Features & UX
+## 🎮 Terminal Experience & UX
 
-- **Full-Width Responsive UI**: Borders, banners, and response cards adapt to your terminal width.
-- **Continuous Timeline Stream**: Turn steps, thoughts, and tool executions flow downward cleanly via a left-rail timeline (`│`).
-- **Interactive Command Palette**: Type `/` or `/help` and press Enter to view all commands grouped by domain.
-- **Native Autocomplete**: Type `/` and press `Tab` for instant completions.
-- **Persistent Shell History**: Press `↑` / `↓` arrows to cycle through previous commands across sessions (stored in `~/.godmod3/history`).
-- **Collapsible Monitoring**: Use `/verbose` to toggle between collapsed summaries and full reasoning / tool outputs.
+- **Full-Width Responsive UI**: Headers, status bars, syntax boxes, and response cards dynamically adapt to your terminal width (`process.stdout.columns`).
+- **Continuous Timeline Stream**: Step turns, model reasoning, and tool executions flow downward cleanly via a left-rail timeline (`│`) without nested box clutter.
+- **Interactive Command Palette**: Type `/` or `/help` and press Enter to instantly display the categorized command palette.
+- **Native Readline Autocomplete**: Type `/` and press `Tab` for instant completions without terminal screen flickering.
+- **Persistent Shell History**: Press `↑` / `↓` arrows to navigate previous commands across sessions (persisted locally in `~/.godmod3/history`).
+- **Collapsible Monitoring**: Use `/verbose` to toggle between compact summaries and expanded reasoning / full tool outputs.
 
 ---
 
@@ -65,8 +65,9 @@ godmode "Audit git status and review changed files"
 | `/code <task>` | Launch autonomous coding specialist subagent |
 | `/plan <objective>` | Launch strategic planner subagent to decompose objectives |
 | `/spawn <role> <task>` | Spawn a custom specialist subagent |
+| `/subagents` | List all available specialist subagent roles |
 | `/model <profile>` | Switch model profile (`glm`, `deepseek`, `qwen`, `smart`, `cheap`, `local`) |
-| `/models` | List all available model profiles and context windows |
+| `/models` | List all available model profiles, pricing, and context windows |
 | `/race <prompt>` | Race prompt across models with ULTRAPLINIAN |
 | `/skills` | Browse and inspect 40+ security skill runbooks |
 | `/todos` | View current plan checklist and subtask status |
@@ -76,6 +77,26 @@ godmode "Audit git status and review changed files"
 | `/checkpoints` | List turn snapshots in the active session |
 | `/sessions` | List saved session checkpoints |
 | `/resume [id]` | Resume a previous session |
+
+---
+
+## 🧠 Intelligence Pipeline Engines
+
+G0DM0D3 includes the core post-training and red-teaming pipeline engines located in `api/` and `src/`:
+
+1. **AutoTune**: Context-adaptive sampling parameter engine across 20 query domains (evaluates prompt intent and tunes temperature, top_p, and system prompts dynamically).
+2. **Parseltongue**: Input perturbation and obfuscation engine for red-teaming with 33 techniques across 3 intensity tiers.
+3. **State Transformer Modules (STM)**: Post-training output transformers (`hedge_reducer`, `direct_mode`) that eliminate canned AI refusals and disclaimers.
+4. **ULTRAPLINIAN**: Multi-model racing and consensus engine that benchmarks and evaluates outputs across model tiers.
+
+### Running the API Pipeline Standalone
+
+The G0DM0D3 API pipeline can also be run as a standalone OpenAI-compatible server:
+
+```bash
+npm run api
+# Starts the API server at http://localhost:7860/v1
+```
 
 ---
 
@@ -91,6 +112,8 @@ GODMOD3-AGENT/
 │       ├── client/           # Backend API connector & process launcher
 │       └── tools/            # Bash, filesystem, git, subagents, todos, skills, memory
 ├── api/              # Multi-model intelligence pipeline server (OpenAI-compatible)
+│   ├── routes/       # Chat, completions, autotune, parseltongue, ultraplinian routes
+│   └── lib/          # Consortium, tiers, and pipeline managers
 ├── src/
 │   ├── lib/          # Parseltongue, AutoTune, OpenRouter integrations
 │   └── stm/          # Behavioral & linguistic transformer modules
@@ -99,7 +122,8 @@ GODMOD3-AGENT/
 
 ---
 
-## 🔐 Privacy & Telemetry
+## 🔐 Zero Telemetry & Privacy Guarantee
 
-- **Zero CLI Telemetry**: No prompts, commands, tool arguments, or file contents are ever collected or sent to external telemetry services.
+- **No Cloudflare Telemetry**: All Cloudflare Pages telemetry beacons, web functions, and tracking proxies have been completely removed.
+- **Zero Remote Logging**: No prompts, commands, tool arguments, or file contents are ever collected, transmitted, or tracked by any external analytics service.
 - **100% Local Storage**: Shell history and session checkpoints are stored strictly on your local disk under `~/.godmod3/`.
