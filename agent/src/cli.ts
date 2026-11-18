@@ -259,6 +259,27 @@ program
       ].join('\n')
     }
 
+    const formatTerminalMarkdown = (content: string): string => {
+      let formatted = content.replace(/```([a-zA-Z0-9_-]*)\n([\s\S]*?)```/g, (_, lang, code) => {
+        const border = '──────────────────────────────────────────────────────────'
+        const langTag = lang ? `[${lang}] ` : ''
+        const lines = code.trimEnd().split('\n')
+        return [
+          chalk.dim(`\n┌─ `) + chalk.cyan.bold(langTag) + chalk.dim(border.slice(langTag.length + 3)) + chalk.dim(`┐`),
+          ...lines.map(l => chalk.dim(`│ `) + chalk.white(l)),
+          chalk.dim(`└${border}┘\n`),
+        ].join('\n')
+      })
+
+      formatted = formatted.replace(/^(#{1,3})\s+(.*)$/gm, (_, hashes, title) => {
+        return chalk.bold.cyan(`\n${hashes} ${title}`)
+      })
+
+      formatted = formatted.replace(/\*\*(.*?)\*\*/g, (_, text) => chalk.bold(text))
+      formatted = formatted.replace(/`([^`\n]+)`/g, (_, code) => chalk.yellow(`\`${code}\``))
+      return formatted
+    }
+
     const runAgentWithUi = async (rawPrompt: string, isResuming = false) => {
       const userPrompt = resolveFileMentions(rawPrompt)
       // ── Option 1: ULTRAPLINIAN Race Mode ──────────────────────────────
@@ -416,7 +437,7 @@ program
         stopSpinner()
         const cleanFinalAnswer = result.finalAnswer.replace(/<(thinking|thought|reasoning)>[\s\S]*?<\/\1>/gi, '').trim()
         console.log(chalk.bold.green(`\n══════════════════ [G0DM0D3 RESPONSE] ══════════════════`))
-        console.log(cleanFinalAnswer || result.finalAnswer)
+        console.log(formatTerminalMarkdown(cleanFinalAnswer || result.finalAnswer))
         console.log(chalk.bold.green(`─────────────────────────────────────────────────────────`))
         console.log(chalk.bold.cyan(`📊 Usage & Cost: `) + chalk.white(result.costSummary))
         console.log(chalk.gray(`💾 Session saved: ${result.sessionId} (Resume with: godmod3-agent --resume ${result.sessionId})`))
@@ -562,6 +583,13 @@ program
 
       rl.on('SIGINT', () => {
         clearLiveMenu()
+        if (multilineBuffer.length > 0) {
+          multilineBuffer = []
+          rl.setPrompt(chalk.bold.magenta('godmod3> '))
+          console.log(chalk.gray('\n(Canceled multiline input)'))
+          rl.prompt()
+          return
+        }
         if (agent.isTaskRunning()) {
           console.log(chalk.bold.red('\n\n🛑 [TASK STOPPED] Active task stopped by user (Ctrl+C). Session saved.'))
           agent.stop('SIGINT from user')
@@ -572,8 +600,25 @@ program
         }
       })
 
+      let multilineBuffer: string[] = []
+
       rl.on('line', async (line) => {
         clearLiveMenu()
+
+        if (line.endsWith('\\')) {
+          multilineBuffer.push(line.slice(0, -1))
+          rl.setPrompt(chalk.dim('... '))
+          rl.prompt()
+          return
+        }
+
+        if (multilineBuffer.length > 0) {
+          multilineBuffer.push(line)
+          line = multilineBuffer.join('\n')
+          multilineBuffer = []
+          rl.setPrompt(chalk.bold.magenta('godmod3> '))
+        }
+
         const trimmed = line.trim()
         if (trimmed) {
           appendCliHistory(trimmed)
