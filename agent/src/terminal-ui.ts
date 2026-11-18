@@ -175,11 +175,11 @@ export function renderBanner(opts: {
   const tag = `[LIBERATED TERMINAL ENGINE]`
   const topRem = Math.max(0, W - 3 - visibleLength(title) - visibleLength(tag) - 1)
 
-  const line1 = `${chalk.bold.cyan('• Model:')} ${chalk.bold.yellow(opts.model)} ${chalk.dim(`(${opts.profile})`)}   ${chalk.bold.cyan('• Context:')} ${chalk.green(opts.contextWindow)}   ${chalk.bold.cyan('• Mode:')} ${chalk.bold.green('UNCENSORED')}`
-  const line2 = `${chalk.bold.cyan('• Workspace:')} ${chalk.white(opts.workdir)}   ${chalk.bold.cyan('• Engine:')} ${chalk.magenta('Autonomous ReAct + STM Tools')}`
+  const line1 = `${chalk.cyan('• Model:')} ${chalk.bold.yellow(opts.model)} ${chalk.dim(`(${opts.profile})`)}   ${chalk.cyan('• Context:')} ${chalk.green(opts.contextWindow)}   ${chalk.cyan('• Mode:')} ${chalk.bold.green('UNCENSORED')}`
+  const line2 = `${chalk.cyan('• Workspace:')} ${chalk.white(opts.workdir)}   ${chalk.cyan('• Engine:')} ${chalk.hex('#a78bfa')('Autonomous ReAct + STM Tools')}`
 
   return [
-    chalk.cyan('╭─') + chalk.bold.cyan(` ${title} `) + chalk.bold.green(`${tag} `) + chalk.cyan('─'.repeat(topRem) + '╮'),
+    chalk.cyan('╭─') + chalk.bold.white(` ${title} `) + chalk.hex('#10b981')(`${tag} `) + chalk.cyan('─'.repeat(topRem) + '╮'),
     chalk.cyan('│ ') + fitLine(line1, innerW) + chalk.cyan(' │'),
     chalk.cyan('│ ') + fitLine(line2, innerW) + chalk.cyan(' │'),
     chalk.cyan('╰' + '─'.repeat(W - 2) + '╯'),
@@ -196,7 +196,7 @@ export function renderCommandPalette(): string {
 
   const lines: string[] = [
     '',
-    chalk.bold.cyan('  CONTROL & EXECUTION'),
+    chalk.bold.cyan('  ⚡ CONTROL & EXECUTION'),
     row(`${chalk.bold.green('/stop')}, ${chalk.bold.green('/cancel')}`, 'Stop active task execution immediately (or press Ctrl+C)'),
     row(`${chalk.bold.green('/steer')}, ${chalk.bold.green('/add')}`, 'Inject guidance / steering over active agent session'),
     row(`${chalk.bold.green('/status')}, ${chalk.bold.green('/explain')}`, 'Inspect live agent thoughts, turns taken, and findings'),
@@ -204,7 +204,7 @@ export function renderCommandPalette(): string {
     row(`${chalk.bold.green('/clear')}, ${chalk.bold.green('/reset')}`, 'Reset agent memory and state to start clean session'),
     row(`${chalk.bold.green('/version')}`, 'Display agent engine version, platform, and runtime info'),
     '',
-    chalk.bold.magenta('  SPECIALIST SUBAGENTS'),
+    chalk.bold.hex('#a78bfa')('  ◆ SPECIALIST SUBAGENTS'),
     row(`${chalk.bold.green('/pentest')} <target>`, 'Spawn offensive security pentesting specialist subagent'),
     row(`${chalk.bold.green('/research')} <query>`, 'Spawn deep research and code audit specialist subagent'),
     row(`${chalk.bold.green('/code')} <task>`, 'Spawn autonomous coding specialist subagent'),
@@ -212,13 +212,13 @@ export function renderCommandPalette(): string {
     row(`${chalk.bold.green('/spawn')} <role> <task>`, 'Spawn custom specialist role (coder, pentester, planner...)'),
     row(`${chalk.bold.green('/subagents')}`, 'List all specialist subagent capabilities and roles'),
     '',
-    chalk.bold.yellow('  MODELS & INTELLIGENCE'),
+    chalk.bold.yellow('  ✦ MODELS & INTELLIGENCE'),
     row(`${chalk.bold.green('/model')} <profile>`, 'Switch profile (glm, deepseek, qwen, smart, cheap, local)'),
     row(`${chalk.bold.green('/models')}`, 'List all model profiles, pricing, and context windows'),
     row(`${chalk.bold.green('/race')} <prompt>`, 'Race prompt across models with ULTRAPLINIAN'),
     row(`${chalk.bold.green('/skills')}`, 'Browse and inspect 40+ pentest skill runbooks'),
     '',
-    chalk.bold.blue('  STATE & SESSIONS'),
+    chalk.bold.blue('  ◇ STATE & SESSIONS'),
     row(`${chalk.bold.green('/todos')}`, 'View current multi-step task checklist and subtasks'),
     row(`${chalk.bold.green('/memory')}`, 'Inspect saved persistent agent session memory graph'),
     row(`${chalk.bold.green('/diff')}`, 'View git diff of modified files in active session'),
@@ -228,7 +228,7 @@ export function renderCommandPalette(): string {
     '',
   ]
 
-  return createBox('🤖 G0DM0D3 COMMAND PALETTE', lines, {
+  return createBox('COMMAND PALETTE', lines, {
     badge: 'Press Tab on "/" for live autocomplete',
     borderColor: chalk.cyan,
     titleColor: chalk.bold.cyan,
@@ -237,106 +237,106 @@ export function renderCommandPalette(): string {
 }
 
 /**
- * Formats model reasoning / thinking box spanning the full terminal width.
+ * Formats a clean command/tool preview string instead of raw JSON.
  */
-export function renderThinkingBox(thought: string, verbose = false): string {
+export function formatToolSummary(name: string, args: any): string {
+  if (name === 'execute_command') {
+    return chalk.yellow(`$ ${args.command || ''}`)
+  }
+  if (name === 'read_file') {
+    return chalk.cyan(`read `) + chalk.white(args.path || '')
+  }
+  if (name === 'write_file') {
+    return chalk.hex('#10b981')(`write `) + chalk.white(args.path || '')
+  }
+  if (name === 'edit_file') {
+    return chalk.yellow(`edit `) + chalk.white(args.path || '')
+  }
+  if (name === 'list_directory') {
+    return chalk.cyan(`ls `) + chalk.white(args.path || '.')
+  }
+  if (name === 'search_files') {
+    return chalk.cyan(`search `) + chalk.yellow(`"${args.query || ''}"`) + (args.path ? chalk.dim(` in ${args.path}`) : '')
+  }
+  if (name === 'web_search') {
+    return chalk.cyan(`web `) + chalk.yellow(`"${args.query || ''}"`)
+  }
+  if (name === 'fetch_web_page') {
+    return chalk.cyan(`fetch `) + chalk.dim(args.url || '')
+  }
+  if (name === 'manage_todos') {
+    return chalk.hex('#a78bfa')(`todos `) + chalk.white(args.action || 'list')
+  }
+  if (name === 'spawn_subagent') {
+    return chalk.hex('#a78bfa')(`spawn `) + chalk.bold.white(args.role || 'subagent') + chalk.dim(`: "${args.task || ''}"`)
+  }
+  const str = JSON.stringify(args)
+  return str.length > 90 ? str.slice(0, 87) + '...' : str
+}
+
+/**
+ * Renders step timeline node connecting seamlessly with previous steps.
+ */
+export function renderStepHeader(turn: number, action: string, detail?: string, isFirst = false): void {
+  if (!isFirst) {
+    console.log(chalk.gray(`│`))
+  }
+  const detailStr = detail ? chalk.dim(` (${detail})`) : ''
+  console.log(chalk.cyan(`◆ `) + chalk.bold.white(`Step ${turn}`) + chalk.dim(` · ${action}`) + detailStr)
+}
+
+/**
+ * Streams reasoning in an indented timeline branch.
+ */
+export function renderThinkingStream(thought: string, verbose = false): void {
+  const lines = thought.trim().split('\n').filter(Boolean)
   const words = thought.trim().split(/\s+/).filter(Boolean).length
-  const rawLines = thought.trim().split('\n').filter(l => l.trim().length > 0)
-  const W = getTerminalWidth()
-  const innerW = W - 4
+  const badge = verbose ? chalk.dim(`(${words} words · full)`) : chalk.dim(`(${words} words · collapsed)`)
 
-  if (!verbose && rawLines.length > 3) {
-    const preview = rawLines[0]
-    const wrapped = wrapText(preview, innerW).slice(0, 2)
-    const lines = [
-      ...wrapped.map(l => chalk.italic.white(l)),
-      chalk.dim(`... [${rawLines.length - 1} lines collapsed • toggle full reasoning with /verbose]`),
-    ]
-    return '\n' + createBox('🧠 REASONING', lines, {
-      badge: `${words} words • Collapsed`,
-      borderColor: chalk.magenta,
-      titleColor: chalk.bold.magenta,
-      badgeColor: chalk.dim,
-    })
-  }
-
-  const allLines: string[] = []
-  for (const l of rawLines) {
-    allLines.push(...wrapText(l, innerW).map(wl => chalk.italic.white(wl)))
-  }
-
-  return '\n' + createBox('🧠 REASONING', allLines, {
-    badge: `${words} words • Expanded`,
-    borderColor: chalk.magenta,
-    titleColor: chalk.bold.magenta,
-    badgeColor: chalk.dim,
-  })
-}
-
-/**
- * Formats tool execution card spanning the full terminal width.
- */
-export function renderToolCallBox(name: string, args: any): string {
-  const W = getTerminalWidth()
-  const innerW = W - 4
-  const argStr = JSON.stringify(args, null, 2)
-  const argLines = argStr.split('\n')
-  const lines: string[] = []
-
-  if (argLines.length <= 4) {
-    lines.push(...argLines.map(l => chalk.yellow(l)))
+  console.log(chalk.gray(`│  `) + chalk.hex('#a78bfa')(`✦ Reasoning `) + badge)
+  if (!verbose && lines.length > 2) {
+    const preview = lines[0].slice(0, 110)
+    console.log(chalk.gray(`│    `) + chalk.italic.dim(preview + (preview.length < lines[0].length ? '...' : '')))
+    console.log(chalk.gray(`│    `) + chalk.dim(`... [${lines.length - 1} lines collapsed · toggle with /verbose]`))
   } else {
-    lines.push(
-      chalk.yellow(argLines[0]),
-      ...argLines.slice(1, 4).map(l => chalk.yellow(l)),
-      chalk.dim(`... [${argLines.length - 4} more lines of args]`)
-    )
+    for (const l of lines) {
+      console.log(chalk.gray(`│    `) + chalk.italic.dim(l))
+    }
   }
-
-  return '\n' + createBox(`🛠️ TOOL: ${name}`, lines, {
-    badge: 'Executing',
-    borderColor: chalk.blue,
-    titleColor: chalk.bold.blue,
-    badgeColor: chalk.cyan,
-  })
 }
 
 /**
- * Formats tool execution output spanning the full terminal width.
+ * Streams tool invocation in an indented timeline branch.
  */
-export function renderToolResultBox(name: string, result: string, verbose = false): string {
-  const rawLines = result.trim().split('\n')
-  const lineCount = rawLines.length
-  const W = getTerminalWidth()
-  const innerW = W - 4
+export function renderToolCallStream(name: string, args: any): void {
+  const summary = formatToolSummary(name, args)
+  console.log(chalk.gray(`│  `) + chalk.hex('#f59e0b')(`⚙ Tool: `) + chalk.bold.white(name))
+  console.log(chalk.gray(`│    `) + summary)
+}
 
-  let displayed: string[] = []
-  let badge = `${lineCount} lines`
+/**
+ * Streams tool results in an indented timeline branch.
+ */
+export function renderToolResultStream(name: string, result: string, verbose = false): void {
+  const lines = result.trim().split('\n').filter(l => l.length > 0)
+  const lineCount = lines.length
 
-  if (!verbose && lineCount > 6) {
-    badge = `${lineCount} lines • Collapsed`
-    const sample = rawLines.slice(0, 5)
-    for (const l of sample) {
-      displayed.push(...wrapText(l, innerW).map(wl => chalk.dim(wl)))
+  if (!verbose && lineCount > 4) {
+    console.log(chalk.gray(`│    `) + chalk.hex('#10b981')(`↳ ✔ Completed `) + chalk.dim(`(${lineCount} lines · preview):`))
+    for (const l of lines.slice(0, 3)) {
+      console.log(chalk.gray(`│      `) + chalk.dim(l.length > 100 ? l.slice(0, 97) + '...' : l))
     }
-    displayed.push(chalk.dim(`... [${lineCount - 5} more lines collapsed • toggle full output with /verbose]`))
+    console.log(chalk.gray(`│      `) + chalk.dim(`... [${lineCount - 3} lines collapsed · toggle with /verbose]`))
   } else {
     const limit = verbose ? 100 : 25
-    const sample = rawLines.slice(0, limit)
-    for (const l of sample) {
-      displayed.push(...wrapText(l, innerW).map(wl => chalk.dim(wl)))
+    console.log(chalk.gray(`│    `) + chalk.hex('#10b981')(`↳ ✔ Completed `) + chalk.dim(`(${lineCount} lines):`))
+    for (const l of lines.slice(0, limit)) {
+      console.log(chalk.gray(`│      `) + chalk.dim(l.length > 110 ? l.slice(0, 107) + '...' : l))
     }
     if (lineCount > limit) {
-      displayed.push(chalk.dim(`... [${lineCount - limit} more lines truncated • /verbose to view more]`))
+      console.log(chalk.gray(`│      `) + chalk.dim(`... [${lineCount - limit} lines truncated · toggle with /verbose]`))
     }
   }
-
-  return createBox(`✔️ OUTPUT: ${name}`, displayed, {
-    badge,
-    borderColor: chalk.green,
-    titleColor: chalk.bold.green,
-    badgeColor: chalk.dim,
-  }) + '\n'
 }
 
 /**

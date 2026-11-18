@@ -21,9 +21,10 @@ import {
   terminalSpinner,
   renderBanner,
   renderCommandPalette,
-  renderThinkingBox,
-  renderToolCallBox,
-  renderToolResultBox,
+  renderStepHeader,
+  renderThinkingStream,
+  renderToolCallStream,
+  renderToolResultStream,
   renderResponseCard,
   formatTerminalMarkdown,
 } from './terminal-ui'
@@ -274,7 +275,9 @@ program
 
       // ── Option 3: Full ReAct Tool-Calling Agent Loop ─────────────────
       console.log(chalk.bold.cyan(`\n⚡ Goal: `) + chalk.white(userPrompt))
-      console.log(chalk.gray(`Session: ${agent.getSessionId()} | Model: ${chalk.bold.yellow(resolvedModel)} (Profile: ${options.profile})\n`))
+      console.log(chalk.gray(`Session: ${agent.getSessionId()} | Model: ${chalk.bold.yellow(resolvedModel)} (${options.profile})\n`))
+
+      let isFirstTurn = true
 
       try {
         const result = await agent.runTask({
@@ -285,27 +288,29 @@ program
           resumeSession: isResuming ? resumedSession || undefined : undefined,
           requireApproval: Boolean(options.ask),
           onStep: (turn: number, action: string, detail?: string, costSummary?: string) => {
-            const costTag = costSummary ? chalk.dim(` [${costSummary}]`) : ''
-            terminalSpinner.start(
-              chalk.bold.cyan(`[Step ${turn}] `) + chalk.white(action) + (detail ? chalk.dim(` • ${detail}`) : '') + costTag
-            )
+            terminalSpinner.stop()
+            renderStepHeader(turn, action, detail, isFirstTurn)
+            isFirstTurn = false
+            terminalSpinner.start(chalk.dim(`│  Thinking...`))
           },
           onThinking: (thought: string) => {
             terminalSpinner.stop()
-            console.log(renderThinkingBox(thought, isVerbose))
+            renderThinkingStream(thought, isVerbose)
+            terminalSpinner.start(chalk.dim(`│  Executing...`))
           },
           onToolCall: (name: string, args: any) => {
             terminalSpinner.stop()
-            console.log(renderToolCallBox(name, args))
-            terminalSpinner.start(chalk.cyan(`Executing ${name}...`))
+            renderToolCallStream(name, args)
+            terminalSpinner.start(chalk.dim(`│    Running ${name}...`))
           },
           onToolResult: (name: string, result: string) => {
             terminalSpinner.stop()
-            console.log(renderToolResultBox(name, result, isVerbose))
+            renderToolResultStream(name, result, isVerbose)
+            terminalSpinner.start(chalk.dim(`│  Analyzing result...`))
           },
           onTodoUpdate: (todos) => {
             const completed = todos.filter(t => t.status === 'completed').length
-            console.log(chalk.cyan(`  📋 Plan Progress: ${completed}/${todos.length} subtasks completed`))
+            console.log(chalk.gray(`│  `) + chalk.cyan(`◇ Plan: `) + chalk.white(`${completed}/${todos.length} tasks completed`))
           },
           onApprovalRequest: async (toolName: string, args: any): Promise<boolean> => {
             terminalSpinner.stop()
@@ -320,13 +325,11 @@ program
           },
           onRefusal: (count: number, max: number, refusalText: string) => {
             terminalSpinner.stop()
-            console.log(chalk.bold.red(`\n🚫 [Model Refusal ${count}/${max}] `) + chalk.yellow(`Canned refusal detected.`))
-            console.log(chalk.gray(`   "${refusalText.slice(0, 100)}..."`))
+            console.log(chalk.gray(`│  `) + chalk.hex('#ef4444')(`✖ Refusal ${count}/${max}: `) + chalk.dim(refusalText.slice(0, 80) + '...'))
           },
           onModelChange: (oldModel: string, newModel: string, reason: string) => {
             terminalSpinner.stop()
-            console.log(chalk.bold.magenta(`\n🔄 [Agent Failover] `) + chalk.cyan(`${oldModel} ➔ ${chalk.bold.yellow(newModel)}`))
-            console.log(chalk.gray(`   ${reason}\n`))
+            console.log(chalk.gray(`│  `) + chalk.hex('#a78bfa')(`↻ Failover: `) + chalk.dim(`${oldModel} ➔ `) + chalk.bold.yellow(newModel))
           },
           onTurnLimitReached: async (currentTurn: number): Promise<boolean | number> => {
             terminalSpinner.stop()
@@ -345,7 +348,8 @@ program
         })
 
         terminalSpinner.stop()
-        console.log('\n' + renderResponseCard({
+        console.log(chalk.gray(`│`))
+        console.log(renderResponseCard({
           content: result.finalAnswer,
           model: resolvedModel,
           costSummary: result.costSummary,
