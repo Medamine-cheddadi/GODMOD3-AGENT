@@ -6,7 +6,6 @@ import os from 'os'
 import { Command } from 'commander'
 import readline from 'readline'
 import chalk from 'chalk'
-import ora from 'ora'
 import { GodModeAgent } from './agent/agent'
 import { GodModeClient } from './client/godmode-client'
 import { AGENT_SYSTEM_PROMPT, resolveFileMentions } from './agent/prompt'
@@ -19,6 +18,7 @@ import { spawnSubagentHandler, SUBAGENT_PROMPTS } from './tools/subagent'
 import { ultraplinianRaceHandler } from './tools/ultraplinian'
 import { manageSkillsHandler } from './tools/skills'
 import {
+  terminalSpinner,
   renderBanner,
   renderCommandPalette,
   renderThinkingBox,
@@ -276,14 +276,6 @@ program
       console.log(chalk.bold.cyan(`\n⚡ Goal: `) + chalk.white(userPrompt))
       console.log(chalk.gray(`Session: ${agent.getSessionId()} | Model: ${chalk.bold.yellow(resolvedModel)} (Profile: ${options.profile})\n`))
 
-      let activeSpinner: any = null
-      const stopSpinner = () => {
-        if (activeSpinner) {
-          activeSpinner.stop()
-          activeSpinner = null
-        }
-      }
-
       try {
         const result = await agent.runTask({
           task: userPrompt,
@@ -293,27 +285,22 @@ program
           resumeSession: isResuming ? resumedSession || undefined : undefined,
           requireApproval: Boolean(options.ask),
           onStep: (turn: number, action: string, detail?: string, costSummary?: string) => {
-            stopSpinner()
             const costTag = costSummary ? chalk.dim(` [${costSummary}]`) : ''
-            activeSpinner = ora({
-              text: chalk.bold.cyan(`[Step ${turn}] `) + chalk.white(action) + (detail ? chalk.dim(` • ${detail}`) : '') + costTag,
-              color: 'cyan',
-            }).start()
+            terminalSpinner.start(
+              chalk.bold.cyan(`[Step ${turn}] `) + chalk.white(action) + (detail ? chalk.dim(` • ${detail}`) : '') + costTag
+            )
           },
           onThinking: (thought: string) => {
-            stopSpinner()
+            terminalSpinner.stop()
             console.log(renderThinkingBox(thought, isVerbose))
           },
           onToolCall: (name: string, args: any) => {
-            stopSpinner()
+            terminalSpinner.stop()
             console.log(renderToolCallBox(name, args))
-            activeSpinner = ora({
-              text: chalk.cyan(`Executing ${name}...`),
-              color: 'cyan',
-            }).start()
+            terminalSpinner.start(chalk.cyan(`Executing ${name}...`))
           },
           onToolResult: (name: string, result: string) => {
-            stopSpinner()
+            terminalSpinner.stop()
             console.log(renderToolResultBox(name, result, isVerbose))
           },
           onTodoUpdate: (todos) => {
@@ -321,6 +308,7 @@ program
             console.log(chalk.cyan(`  📋 Plan Progress: ${completed}/${todos.length} subtasks completed`))
           },
           onApprovalRequest: async (toolName: string, args: any): Promise<boolean> => {
+            terminalSpinner.stop()
             return new Promise((resolve) => {
               const rlAsk = readline.createInterface({ input: process.stdin, output: process.stdout })
               rlAsk.question(chalk.bold.yellow(`\n⚠️  [Approval Required] Allow "${toolName}" (${JSON.stringify(args)})? [Y/n]: `), (ans) => {
@@ -331,14 +319,17 @@ program
             })
           },
           onRefusal: (count: number, max: number, refusalText: string) => {
+            terminalSpinner.stop()
             console.log(chalk.bold.red(`\n🚫 [Model Refusal ${count}/${max}] `) + chalk.yellow(`Canned refusal detected.`))
             console.log(chalk.gray(`   "${refusalText.slice(0, 100)}..."`))
           },
           onModelChange: (oldModel: string, newModel: string, reason: string) => {
+            terminalSpinner.stop()
             console.log(chalk.bold.magenta(`\n🔄 [Agent Failover] `) + chalk.cyan(`${oldModel} ➔ ${chalk.bold.yellow(newModel)}`))
             console.log(chalk.gray(`   ${reason}\n`))
           },
           onTurnLimitReached: async (currentTurn: number): Promise<boolean | number> => {
+            terminalSpinner.stop()
             return new Promise((resolve) => {
               const rlTurn = readline.createInterface({ input: process.stdin, output: process.stdout })
               rlTurn.question(
@@ -353,7 +344,7 @@ program
           },
         })
 
-        stopSpinner()
+        terminalSpinner.stop()
         console.log('\n' + renderResponseCard({
           content: result.finalAnswer,
           model: resolvedModel,
@@ -361,7 +352,7 @@ program
           sessionId: result.sessionId,
         }))
       } catch (err: any) {
-        stopSpinner()
+        terminalSpinner.stop()
         console.error(chalk.bold.red(`\nAgent Error: `) + err.message)
         console.log(chalk.yellow(`💾 Interrupted state saved. Resume with: godmod3-agent --resume\n`))
       }
@@ -457,6 +448,7 @@ program
           return
         }
         if (agent.isTaskRunning()) {
+          terminalSpinner.stop()
           console.log(chalk.bold.red('\n\n🛑 [TASK STOPPED] Active task stopped by user (Ctrl+C). Session saved.'))
           agent.stop('SIGINT from user')
           setTimeout(() => rl.prompt(), 100)

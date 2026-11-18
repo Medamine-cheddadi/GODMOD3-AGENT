@@ -1,4 +1,36 @@
 import chalk from 'chalk'
+import ora, { Ora } from 'ora'
+
+/**
+ * Singleton spinner manager ensuring only one Ora spinner instance ever exists,
+ * preventing "[ora] Multiple concurrent spinners detected" warnings.
+ */
+class SpinnerManager {
+  private spinner: Ora | null = null
+
+  private getSpinner(): Ora {
+    if (!this.spinner) {
+      this.spinner = ora({ color: 'cyan', discardStdin: false })
+    }
+    return this.spinner
+  }
+
+  start(text: string) {
+    const s = this.getSpinner()
+    s.text = text
+    if (!s.isSpinning) {
+      s.start()
+    }
+  }
+
+  stop() {
+    if (this.spinner && this.spinner.isSpinning) {
+      this.spinner.stop()
+    }
+  }
+}
+
+export const terminalSpinner = new SpinnerManager()
 
 /**
  * Returns the effective terminal width, clamped between 64 and 220.
