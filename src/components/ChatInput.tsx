@@ -243,11 +243,37 @@ export function ChatInput() {
     }
   }, [isStreaming, queuedMessage])
 
-  const isSlashTyping = input.startsWith('/') && !input.includes(' ') && !isMenuDismissed
-  const filteredCommands = isSlashTyping
-    ? SLASH_COMMANDS.filter(c => c.cmd.toLowerCase().startsWith(input.trim().toLowerCase()))
-    : []
+  const [isMenuOpenExplicit, setIsMenuOpenExplicit] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
+
+  const isSlashTyping = (input.startsWith('/') || isMenuOpenExplicit) && !isMenuDismissed
+  const filterQuery = input.startsWith('/') ? input.slice(1).trim().toLowerCase() : ''
+  const filteredCommands = SLASH_COMMANDS.filter(c => {
+    if (!filterQuery) return true
+    return (
+      c.cmd.toLowerCase().slice(1).startsWith(filterQuery) ||
+      c.label.toLowerCase().includes(filterQuery) ||
+      c.desc.toLowerCase().includes(filterQuery)
+    )
+  })
   const showSlashMenu = isSlashTyping && filteredCommands.length > 0
+
+  // Outside click handler to dismiss menu cleanly
+  useEffect(() => {
+    const handleOutsideClick = (e: MouseEvent) => {
+      if (
+        menuRef.current &&
+        !menuRef.current.contains(e.target as Node) &&
+        textareaRef.current &&
+        !textareaRef.current.contains(e.target as Node)
+      ) {
+        setIsMenuDismissed(true)
+        setIsMenuOpenExplicit(false)
+      }
+    }
+    document.addEventListener('mousedown', handleOutsideClick)
+    return () => document.removeEventListener('mousedown', handleOutsideClick)
+  }, [])
 
   // Global Escape key handler to immediately stop generation anywhere on the page
   useEffect(() => {
@@ -255,6 +281,7 @@ export function ChatInput() {
       if (e.key === 'Escape') {
         if (showSlashMenu) {
           setIsMenuDismissed(true)
+          setIsMenuOpenExplicit(false)
         } else if (isStreaming) {
           e.preventDefault()
           handleStop()
@@ -268,7 +295,8 @@ export function ChatInput() {
   const selectCommand = (cmd: string) => {
     setInput(`${cmd} `)
     setSelectedMenuIndex(0)
-    setIsMenuDismissed(false)
+    setIsMenuDismissed(true)
+    setIsMenuOpenExplicit(false)
     setTimeout(() => {
       textareaRef.current?.focus()
     }, 10)
@@ -1263,7 +1291,7 @@ Your mission: Decompose complex objectives into ordered milestones, actionable t
 
         {/* Slash Commands Interactive Live Menu */}
         {showSlashMenu && filteredCommands.length > 0 && (
-          <div className="mb-3 p-2 bg-theme-bg/95 backdrop-blur-md border border-cyan-500/40 rounded-xl shadow-2xl space-y-1 max-h-72 overflow-y-auto z-50">
+          <div ref={menuRef} className="mb-3 p-2 bg-theme-bg/95 backdrop-blur-md border border-cyan-500/40 rounded-xl shadow-2xl space-y-1 max-h-72 overflow-y-auto z-50">
             <div className="px-3 py-1.5 flex items-center justify-between text-[11px] font-mono theme-secondary border-b border-theme-primary/20">
               <span className="flex items-center gap-1.5 font-bold text-cyan-400">
                 <Terminal className="w-3.5 h-3.5" />
@@ -1345,7 +1373,14 @@ Your mission: Decompose complex objectives into ordered milestones, actionable t
             <textarea
               ref={textareaRef}
               value={input}
-              onChange={(e) => setInput(e.target.value)}
+              onChange={(e) => {
+                const val = e.target.value
+                setInput(val)
+                setIsMenuDismissed(false)
+                if (val.startsWith('/')) {
+                  setSelectedMenuIndex(0)
+                }
+              }}
               onKeyDown={handleKeyDown}
               placeholder={
                 !apiKey && !proxyMode
@@ -1373,8 +1408,34 @@ Your mission: Decompose complex objectives into ordered milestones, actionable t
             )}
           </div>
 
-          {/* Action buttons (Stop + Queue/Send) */}
+          {/* Action buttons (Slash Menu Toggle + Stop + Queue/Send) */}
           <div className="flex items-center gap-2">
+            {/* Slash Commands Menu Toggle Button */}
+            <button
+              type="button"
+              onClick={() => {
+                if (showSlashMenu) {
+                  setIsMenuDismissed(true)
+                  setIsMenuOpenExplicit(false)
+                } else {
+                  setIsMenuDismissed(false)
+                  setIsMenuOpenExplicit(true)
+                  if (!input.startsWith('/')) {
+                    setInput('/')
+                  }
+                  textareaRef.current?.focus()
+                }
+              }}
+              className={`p-3 border rounded-lg transition-all flex items-center justify-center font-mono font-bold ${
+                showSlashMenu
+                  ? 'bg-cyan-500/30 border-cyan-400 text-cyan-300 shadow-[0_0_15px_rgba(6,182,212,0.4)]'
+                  : 'bg-theme-bg/80 border-theme-primary/40 text-theme-secondary hover:text-white hover:border-cyan-500/50 hover:bg-cyan-500/10'
+              }`}
+              title="Toggle Agent & System Slash Commands Menu (/)"
+              aria-label="Toggle Slash Commands Menu"
+            >
+              <Terminal className="w-5 h-5 text-cyan-400" />
+            </button>
             {isStreaming && (
               <button
                 type="button"

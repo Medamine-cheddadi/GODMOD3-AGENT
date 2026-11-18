@@ -723,6 +723,16 @@ program
           return
         }
 
+        if (trimmed === '/' || trimmed === '/menu' || trimmed === '/commands') {
+          console.log(chalk.bold.cyan('\n── 🤖 Agent Slash Commands Menu ────────────────────────────────────'))
+          for (const c of REPL_COMMANDS) {
+            console.log(`  ${chalk.bold.green(c.cmd.padEnd(14))} ${chalk.white(c.desc)}`)
+          }
+          console.log(chalk.bold.cyan('───────────────────────────────────────────────────────────────────\n'))
+          rl.prompt()
+          return
+        }
+
         if (trimmed.startsWith('/')) {
           console.log(chalk.bold.red(`\n❌ Unknown slash command "${trimmed}".`))
           console.log(chalk.gray(`Slash commands are executed directly as agent operations and are never sent to the model for conversational analysis.`))
