@@ -2,11 +2,82 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { Message, useStore } from '@/store'
-import { Copy, Check, User, ThumbsUp, ThumbsDown, ChevronDown, ChevronUp, ChevronLeft, ChevronRight } from 'lucide-react'
+import {
+  Copy,
+  Check,
+  User,
+  ThumbsUp,
+  ThumbsDown,
+  ChevronDown,
+  ChevronUp,
+  ChevronLeft,
+  ChevronRight,
+  Brain,
+  Terminal,
+  Wrench,
+} from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { atomDark } from 'react-syntax-highlighter/dist/esm/styles/prism'
 import { getContextLabel, PARAM_META } from '@/lib/autotune'
+
+interface ParsedMessage {
+  thinking: string | null
+  isThinkingActive: boolean
+  tools: Array<{
+    name: string
+    args?: string
+    output?: string
+  }>
+  cleanContent: string
+}
+
+function parseMessageContent(raw: string, directReasoning?: string): ParsedMessage {
+  let content = raw || ''
+  let thinking: string | null = directReasoning || null
+  let isThinkingActive = false
+
+  // 1. Extract <thinking>, <thought>, <reasoning>
+  const thinkingMatch = /<(thinking|thought|reasoning)>([\s\S]*?)(?:<\/\1>|$)/i.exec(content)
+  if (thinkingMatch) {
+    thinking = (thinking ? `${thinking}\n\n` : '') + thinkingMatch[2].trim()
+    isThinkingActive = !content.includes(`</${thinkingMatch[1]}>`)
+    content = content.replace(thinkingMatch[0], '').trim()
+  }
+
+  // 2. Extract tool call & result patterns
+  const tools: Array<{ name: string; args?: string; output?: string }> = []
+
+  // Match <tool_call ...> and <tool_result ...>
+  const toolXmlRegex = /<tool_call(?:\s+name=["']([^"']+)["'])?>([\s\S]*?)<\/tool_call>(?:\s*<tool_result>([\s\S]*?)<\/tool_result>)?/gi
+  content = content.replace(toolXmlRegex, (_, name, body, result) => {
+    tools.push({
+      name: name || 'tool_call',
+      args: body?.trim(),
+      output: result?.trim(),
+    })
+    return ''
+  })
+
+  // Match CLI / Agent execution patterns:
+  // "▶ Executing: tool_name\n    Args: {...}\n  ✔ Result: ..."
+  const cliToolRegex = /[▶►]\s*Executing:\s*([^\n]+)(?:\n\s*Args:\s*([^\n]+))?(?:\n\s*[✔✓]\s*Result:\s*([\s\S]*?)(?=(?:\n[▶►]\s*Executing:|\n\n[A-Z]|$)))?/gi
+  content = content.replace(cliToolRegex, (_, name, args, output) => {
+    tools.push({
+      name: name.trim(),
+      args: args?.trim(),
+      output: output?.trim(),
+    })
+    return ''
+  })
+
+  return {
+    thinking,
+    isThinkingActive,
+    tools,
+    cleanContent: content.trim(),
+  }
+}
 
 interface ChatMessageProps {
   message: Message
@@ -96,6 +167,11 @@ export function ChatMessage({ message }: ChatMessageProps) {
     }
   }
 
+  // Parse thinking process and tool actions for assistant messages
+  const parsed = !isUser
+    ? parseMessageContent(displayBody, (message as any).reasoning)
+    : { thinking: null, isThinkingActive: false, tools: [], cleanContent: displayBody }
+
   const handleCopy = async () => {
     await navigator.clipboard.writeText(message.content)
     setCopied(true)
@@ -169,59 +245,74 @@ export function ChatMessage({ message }: ChatMessageProps) {
           </div>
         </div>
 
-        {/* Content */}
-        <div className={`prose prose-invert max-w-none text-sm ${isLiquidMorphing ? 'liquid-morph' : ''}`}>
-          <ReactMarkdown
-            components={{
-              code({ node, className, children, ...props }) {
-                const match = /language-(\w+)/.exec(className || '')
-                const inline = !match
-                const codeString = String(children).replace(/\n$/, '')
+        {/* Collapsible Thinking Process */}
+        {parsed.thinking && (
+          <CollapsibleThinking
+            thinking={parsed.thinking}
+            isThinkingActive={parsed.isThinkingActive}
+          />
+        )}
 
-                return !inline ? (
-                  <CodeBlock language={match?.[1] || 'text'} code={codeString} />
-                ) : (
-                  <code
-                    className="px-1.5 py-0.5 rounded text-xs font-mono bg-cyan-950/40 text-cyan-300 border border-cyan-500/20"
-                    {...props}
-                  >
-                    {children}
-                  </code>
-                )
-              },
-              p({ children }) {
-                return <p className="mb-3 last:mb-0 leading-relaxed">{children}</p>
-              },
-              ul({ children }) {
-                return <ul className="list-disc pl-4 mb-3 space-y-1">{children}</ul>
-              },
-              ol({ children }) {
-                return <ol className="list-decimal pl-4 mb-3 space-y-1">{children}</ol>
-              },
-              a({ href, children }) {
-                return (
-                  <a
-                    href={href}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="theme-primary underline hover:glow-primary"
-                  >
-                    {children}
-                  </a>
-                )
-              },
-              blockquote({ children }) {
-                return (
-                  <blockquote className="border-l-2 border-theme-primary pl-4 italic opacity-80">
-                    {children}
-                  </blockquote>
-                )
-              }
-            }}
-          >
-            {displayBody}
-          </ReactMarkdown>
-        </div>
+        {/* Collapsible Tool Actions & Monitoring */}
+        {parsed.tools.length > 0 && (
+          <CollapsibleToolActions tools={parsed.tools} />
+        )}
+
+        {/* Content */}
+        {parsed.cleanContent && (
+          <div className={`prose prose-invert max-w-none text-sm ${isLiquidMorphing ? 'liquid-morph' : ''}`}>
+            <ReactMarkdown
+              components={{
+                code({ node, className, children, ...props }) {
+                  const match = /language-(\w+)/.exec(className || '')
+                  const inline = !match
+                  const codeString = String(children).replace(/\n$/, '')
+
+                  return !inline ? (
+                    <CodeBlock language={match?.[1] || 'text'} code={codeString} />
+                  ) : (
+                    <code
+                      className="px-1.5 py-0.5 rounded text-xs font-mono bg-cyan-950/40 text-cyan-300 border border-cyan-500/20"
+                      {...props}
+                    >
+                      {children}
+                    </code>
+                  )
+                },
+                p({ children }) {
+                  return <p className="mb-3 last:mb-0 leading-relaxed">{children}</p>
+                },
+                ul({ children }) {
+                  return <ul className="list-disc pl-4 mb-3 space-y-1">{children}</ul>
+                },
+                ol({ children }) {
+                  return <ol className="list-decimal pl-4 mb-3 space-y-1">{children}</ol>
+                },
+                a({ href, children }) {
+                  return (
+                    <a
+                      href={href}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="theme-primary underline hover:glow-primary"
+                    >
+                      {children}
+                    </a>
+                  )
+                },
+                blockquote({ children }) {
+                  return (
+                    <blockquote className="border-l-2 border-theme-primary pl-4 italic opacity-80">
+                      {children}
+                    </blockquote>
+                  )
+                }
+              }}
+            >
+              {parsed.cleanContent}
+            </ReactMarkdown>
+          </div>
+        )}
 
         {/* Race response navigator — click to focus, then use ←/→ arrow keys */}
         {showMagic && hasRaceNav && !isUser && (
@@ -416,8 +507,130 @@ export function ChatMessage({ message }: ChatMessageProps) {
   )
 }
 
+function CollapsibleThinking({ thinking, isThinkingActive }: { thinking: string; isThinkingActive: boolean }) {
+  const [isOpen, setIsOpen] = useState(isThinkingActive)
+  const wordCount = thinking.trim().split(/\s+/).filter(Boolean).length
+
+  return (
+    <div className="my-2.5 rounded-lg border border-purple-500/30 bg-purple-950/20 shadow-md overflow-hidden transition-all duration-200">
+      <button
+        type="button"
+        onClick={() => setIsOpen(!isOpen)}
+        className="w-full flex items-center justify-between px-3.5 py-2 text-xs font-mono font-medium text-purple-300 hover:bg-purple-900/20 transition-colors"
+        title="Toggle Thought Process"
+      >
+        <span className="flex items-center gap-2">
+          <Brain className={`w-4 h-4 text-purple-400 ${isThinkingActive ? 'animate-pulse' : ''}`} />
+          <span className="font-semibold text-purple-200">
+            {isThinkingActive ? 'Thinking Process...' : 'Thought Process'}
+          </span>
+          <span className="text-[11px] text-purple-400/70 font-normal">
+            ({isThinkingActive ? 'in progress' : `${wordCount} words`})
+          </span>
+        </span>
+        <div className="flex items-center gap-1.5 text-purple-400">
+          <span className="text-[10px] uppercase font-bold tracking-wider">{isOpen ? 'Hide' : 'Inspect'}</span>
+          {isOpen ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+        </div>
+      </button>
+
+      {isOpen && (
+        <div className="px-4 py-3 bg-black/50 border-t border-purple-500/20 text-xs font-mono text-purple-200/90 whitespace-pre-wrap leading-relaxed max-h-96 overflow-y-auto selection:bg-purple-500/30">
+          {thinking}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function CollapsibleToolActions({ tools }: { tools: Array<{ name: string; args?: string; output?: string }> }) {
+  const [isOpen, setIsOpen] = useState(false)
+  const [openToolIndex, setOpenToolIndex] = useState<number | null>(null)
+
+  if (tools.length === 0) return null
+
+  return (
+    <div className="my-2.5 rounded-lg border border-cyan-500/30 bg-cyan-950/20 shadow-md overflow-hidden transition-all duration-200">
+      <button
+        type="button"
+        onClick={() => setIsOpen(!isOpen)}
+        className="w-full flex items-center justify-between px-3.5 py-2 text-xs font-mono font-medium text-cyan-300 hover:bg-cyan-900/20 transition-colors"
+        title="Toggle Tool Actions"
+      >
+        <span className="flex items-center gap-2">
+          <Terminal className="w-4 h-4 text-cyan-400" />
+          <span className="font-semibold text-cyan-200">
+            Tool Monitoring
+          </span>
+          <span className="px-1.5 py-0.5 rounded text-[10px] bg-cyan-500/20 border border-cyan-500/40 text-cyan-300 font-bold">
+            {tools.length} {tools.length === 1 ? 'call' : 'calls'}
+          </span>
+          <span className="text-[11px] text-gray-400 hidden sm:inline">
+            ({tools.map(t => t.name).slice(0, 3).join(', ')}{tools.length > 3 ? ` +${tools.length - 3}` : ''})
+          </span>
+        </span>
+        <div className="flex items-center gap-1.5 text-cyan-400">
+          <span className="text-[10px] uppercase font-bold tracking-wider">{isOpen ? 'Hide' : 'Monitor'}</span>
+          {isOpen ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+        </div>
+      </button>
+
+      {isOpen && (
+        <div className="p-3 bg-black/60 border-t border-cyan-500/20 space-y-2 max-h-96 overflow-y-auto font-mono text-xs">
+          {tools.map((t, idx) => {
+            const isToolExpanded = openToolIndex === idx || (openToolIndex === null && tools.length === 1)
+            return (
+              <div key={idx} className="rounded border border-cyan-500/20 bg-cyan-950/30 overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => setOpenToolIndex(openToolIndex === idx ? -1 : idx)}
+                  className="w-full flex items-center justify-between px-3 py-1.5 bg-cyan-950/50 hover:bg-cyan-900/40 text-left transition-colors"
+                >
+                  <span className="flex items-center gap-2 text-cyan-300 font-bold">
+                    <Wrench className="w-3.5 h-3.5 text-cyan-400" />
+                    <span>{t.name}</span>
+                  </span>
+                  <div className="flex items-center gap-2 text-[11px] text-gray-400">
+                    <span className="text-emerald-400">✔ executed</span>
+                    {isToolExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                  </div>
+                </button>
+
+                {isToolExpanded && (
+                  <div className="p-2.5 space-y-2 border-t border-cyan-500/10 bg-black/40 text-[11px]">
+                    {t.args && (
+                      <div>
+                        <div className="text-[10px] uppercase font-bold text-gray-400 mb-0.5">Parameters:</div>
+                        <pre className="p-1.5 rounded bg-black/60 text-cyan-200 overflow-x-auto whitespace-pre-wrap">
+                          {t.args}
+                        </pre>
+                      </div>
+                    )}
+                    {t.output && (
+                      <div>
+                        <div className="text-[10px] uppercase font-bold text-gray-400 mb-0.5">Execution Output:</div>
+                        <pre className="p-1.5 rounded bg-black/80 text-emerald-300 overflow-x-auto whitespace-pre-wrap max-h-48">
+                          {t.output}
+                        </pre>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function CodeBlock({ language, code }: { language: string; code: string }) {
   const [copied, setCopied] = useState(false)
+  const isToolOutput = ['tool', 'tool-output', 'bash-output', 'output', 'terminal'].includes(language.toLowerCase())
+  const lineCount = code.split('\n').length
+  const isLong = lineCount > 18
+  const [isCollapsed, setIsCollapsed] = useState(isToolOutput && isLong)
 
   const handleCopyCode = async () => {
     await navigator.clipboard.writeText(code)
@@ -426,32 +639,61 @@ function CodeBlock({ language, code }: { language: string; code: string }) {
   }
 
   return (
-    <div className="relative group my-3 rounded-lg overflow-hidden border border-theme-primary/30 bg-theme-bg shadow-lg">
+    <div className={`relative group my-3 rounded-lg overflow-hidden border shadow-lg transition-all ${
+      isToolOutput ? 'border-cyan-500/40 bg-black/80' : 'border-theme-primary/30 bg-theme-bg'
+    }`}>
       <div className="flex items-center justify-between px-3.5 py-1.5 bg-theme-dim/90 border-b border-theme-primary/20 text-xs font-mono">
-        <span className="text-cyan-400 font-semibold uppercase tracking-wider">{language}</span>
-        <button
-          onClick={handleCopyCode}
-          className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-theme-bg/60 border border-theme-primary/20 hover:border-cyan-400/50 text-[11px] text-gray-300 hover:text-cyan-300 transition-all"
-          aria-label="Copy code block"
-        >
-          {copied ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
-          <span>{copied ? 'Copied!' : 'Copy Code'}</span>
-        </button>
+        <div className="flex items-center gap-2">
+          {isToolOutput && <Terminal className="w-3.5 h-3.5 text-cyan-400" />}
+          <span className="text-cyan-400 font-semibold uppercase tracking-wider">{language}</span>
+          <span className="text-[10px] text-gray-400">({lineCount} {lineCount === 1 ? 'line' : 'lines'})</span>
+        </div>
+        <div className="flex items-center gap-2">
+          {isLong && (
+            <button
+              type="button"
+              onClick={() => setIsCollapsed(!isCollapsed)}
+              className="flex items-center gap-1 text-[11px] text-gray-400 hover:text-cyan-300 transition-colors"
+            >
+              {isCollapsed ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronUp className="w-3.5 h-3.5" />}
+              <span>{isCollapsed ? 'Expand' : 'Collapse'}</span>
+            </button>
+          )}
+          <button
+            onClick={handleCopyCode}
+            className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-theme-bg/60 border border-theme-primary/20 hover:border-cyan-400/50 text-[11px] text-gray-300 hover:text-cyan-300 transition-all"
+            aria-label="Copy code block"
+          >
+            {copied ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
+            <span>{copied ? 'Copied!' : 'Copy Code'}</span>
+          </button>
+        </div>
       </div>
-      <SyntaxHighlighter
-        style={atomDark}
-        language={language}
-        PreTag="div"
-        customStyle={{
-          margin: 0,
-          background: 'transparent',
-          fontSize: '0.85rem',
-          padding: '0.85rem',
-          lineHeight: '1.45',
-        }}
-      >
-        {code}
-      </SyntaxHighlighter>
+      {!isCollapsed && (
+        <SyntaxHighlighter
+          style={atomDark}
+          language={language}
+          PreTag="div"
+          customStyle={{
+            margin: 0,
+            background: 'transparent',
+            fontSize: '0.85rem',
+            padding: '0.85rem',
+            lineHeight: '1.45',
+            maxHeight: isToolOutput ? '320px' : 'none',
+          }}
+        >
+          {code}
+        </SyntaxHighlighter>
+      )}
+      {isCollapsed && (
+        <div
+          onClick={() => setIsCollapsed(false)}
+          className="px-4 py-2 text-xs font-mono text-cyan-400/70 hover:text-cyan-300 cursor-pointer bg-black/40 hover:bg-black/60 transition-colors"
+        >
+          {code.slice(0, 120).replace(/\n/g, ' ')}... <span className="underline ml-1">(click to expand {lineCount} lines)</span>
+        </div>
+      )}
     </div>
   )
 }
