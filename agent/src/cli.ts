@@ -27,7 +27,7 @@ ${chalk.bold.cyan('██ ▄███ ██  ██  ██   ██ ██  �
 ${chalk.bold.cyan('██  ██  ██  ██  ██   ██ ██     ██  ██  ██  ██   ██      ██ ')}
 ${chalk.bold.green(' ██████  ████   ██████  ██     ██   ████   ██████  ██████ ')}
 ${chalk.gray('─────────────────────────────────────────────────────────────')}
-${chalk.bold.white(' ░▒▓█  G0DM0D3 AUTONOMOUS AGENT v1.2.0 // LIBERATED REAC ENGINE  █▓▒░')}
+${chalk.bold.white(' ░▒▓█  G0DM0D3 AUTONOMOUS AGENT v1.3.0 // LIBERATED TERMINAL ENGINE  █▓▒░')}
 ${chalk.gray('─────────────────────────────────────────────────────────────')}
 `
 
@@ -70,7 +70,7 @@ const program = new Command()
 program
   .name('godmod3-agent')
   .description('Autonomous ReAct agent powered by G0DM0D3 API')
-  .version('1.2.0')
+  .version('1.3.0')
   .argument('[task...]', 'Task or objective for the agent to execute')
   .option('-p, --profile <profile>', 'Model cost profile (glm, deepseek, qwen, cheap, smart, local)', 'glm')
   .option('-m, --model <model>', 'Direct model ID override')
@@ -478,6 +478,7 @@ program
         { cmd: '/sessions', desc: 'List saved session checkpoints' },
         { cmd: '/resume', desc: 'Resume previous session: /resume [sessionId]' },
         { cmd: '/verbose', desc: 'Toggle collapsible vs expanded thinking and tool monitoring' },
+        { cmd: '/version', desc: 'Display agent engine version and runtime info' },
         { cmd: '/clear', desc: 'Reset agent memory and start fresh session' },
         { cmd: '/help', desc: 'Display this commands help menu' },
         { cmd: 'exit', desc: 'Exit the interactive agent' },
@@ -492,100 +493,46 @@ program
       }
       console.log(chalk.dim(`  ... type /help to view all ${REPL_COMMANDS.length} commands.\n`))
 
-      readline.emitKeypressEvents(process.stdin)
-
-      let isMenuRendered = false
-      const clearLiveMenu = () => {
-        if (isMenuRendered && process.stdout.isTTY) {
-          process.stdout.write('\x1b7\n\x1b[J\x1b8')
-          isMenuRendered = false
-        }
-      }
-
-      const renderLiveMenu = (lineText: string) => {
-        if (!process.stdout.isTTY) return
-        if (!lineText.startsWith('/')) {
-          clearLiveMenu()
-          return
-        }
-
-        const query = lineText.slice(1).trim().toLowerCase()
-        const matches = REPL_COMMANDS.filter(c => {
-          if (!query) return true
-          return (
-            c.cmd.toLowerCase().slice(1).startsWith(query) ||
-            c.desc.toLowerCase().includes(query)
-          )
-        }).slice(0, 8)
-
-        if (matches.length === 0) {
-          clearLiveMenu()
-          return
-        }
-
-        process.stdout.write('\x1b7') // Save cursor position
-        process.stdout.write('\n\x1b[J') // Move down & clear everything below
-        process.stdout.write(chalk.cyan('┌── 🤖 Slash Commands Menu (Tab to complete, Enter to run) ────────┐\n'))
-        for (const m of matches) {
-          const paddedCmd = chalk.bold.green(m.cmd.padEnd(14))
-          const desc = m.desc.length > 50 ? m.desc.slice(0, 47) + '...' : m.desc
-          process.stdout.write(chalk.cyan('│ ') + `${paddedCmd} ${chalk.white(desc.padEnd(50))}` + chalk.cyan(' │\n'))
-        }
-        process.stdout.write(chalk.cyan('└── type /help to view all commands ────────────────────────────────┘'))
-        process.stdout.write('\x1b8') // Restore cursor position back to prompt
-        isMenuRendered = true
-      }
-
-      const keypressListener = (_: any, key: any) => {
-        if (key && key.name === 'escape') {
-          clearLiveMenu()
-          return
-        }
-        setImmediate(() => {
-          const currentLine = (rl as any).line || ''
-          renderLiveMenu(currentLine)
-        })
-      }
-
-      process.stdin.on('keypress', keypressListener)
-
-      const rl = readline.createInterface({
-        input: process.stdin,
-        output: process.stdout,
-        prompt: chalk.bold.magenta('godmod3> '),
-        historySize: MAX_HISTORY_LINES,
-        completer: (line: string) => {
-          clearLiveMenu()
-          const trimmed = line.trim()
-          const hits = REPL_COMMANDS.filter(c => c.cmd.startsWith(trimmed))
-          if (trimmed === '/' || hits.length > 0) {
-            console.log(chalk.bold.cyan('\n\n── 🤖 Slash Commands Menu (Press Enter to execute) ─────────────────'))
-            hits.forEach(h => {
-              console.log(`  ${chalk.bold.green(h.cmd.padEnd(14))} ${chalk.white(h.desc)}`)
-            })
-            console.log(chalk.bold.cyan('───────────────────────────────────────────────────────────────────\n'))
-          }
-          return [hits.map(h => h.cmd), line]
-        },
-      })
-
-      // Load persistent shell history across CLI sessions
       const persistedHistory = loadCliHistory()
-      if (persistedHistory.length > 0) {
-        ;(rl as any).history = persistedHistory
-      }
+      let multilineBuffer: string[] = []
 
-      rl.prompt()
+      const startRepl = (initialLine?: string) => {
+        const rl = readline.createInterface({
+          input: process.stdin,
+          output: process.stdout,
+          prompt: chalk.bold.cyan('⚡ g0dm0d3 ❯ '),
+          historySize: MAX_HISTORY_LINES,
+          completer: (line: string) => {
+            const trimmed = line.trim()
+            const hits = REPL_COMMANDS.filter(c => c.cmd.startsWith(trimmed))
+            if (trimmed === '/' || hits.length > 0) {
+              console.log(chalk.bold.cyan('\n\n── 🤖 Slash Commands Menu (Press Enter to execute) ─────────────────'))
+              hits.forEach(h => {
+                console.log(`  ${chalk.bold.green(h.cmd.padEnd(14))} ${chalk.white(h.desc)}`)
+              })
+              console.log(chalk.bold.cyan('───────────────────────────────────────────────────────────────────\n'))
+            }
+            return [hits.map(h => h.cmd), line]
+          },
+        })
 
-      rl.on('close', () => {
-        process.stdin.removeListener('keypress', keypressListener)
-      })
+        if (persistedHistory.length > 0) {
+          ;(rl as any).history = persistedHistory
+        }
+
+        rl.prompt()
+
+        if (initialLine) {
+          setImmediate(() => {
+            console.log(initialLine)
+            rl.emit('line', initialLine)
+          })
+        }
 
       rl.on('SIGINT', () => {
-        clearLiveMenu()
         if (multilineBuffer.length > 0) {
           multilineBuffer = []
-          rl.setPrompt(chalk.bold.magenta('godmod3> '))
+          rl.setPrompt(chalk.bold.cyan('⚡ g0dm0d3 ❯ '))
           console.log(chalk.gray('\n(Canceled multiline input)'))
           rl.prompt()
           return
@@ -600,11 +547,7 @@ program
         }
       })
 
-      let multilineBuffer: string[] = []
-
       rl.on('line', async (line) => {
-        clearLiveMenu()
-
         if (line.endsWith('\\')) {
           multilineBuffer.push(line.slice(0, -1))
           rl.setPrompt(chalk.dim('... '))
@@ -616,7 +559,7 @@ program
           multilineBuffer.push(line)
           line = multilineBuffer.join('\n')
           multilineBuffer = []
-          rl.setPrompt(chalk.bold.magenta('godmod3> '))
+          rl.setPrompt(chalk.bold.cyan('⚡ g0dm0d3 ❯ '))
         }
 
         const trimmed = line.trim()
@@ -922,6 +865,14 @@ program
           return
         }
 
+        if (trimmed === '/version' || trimmed === 'version') {
+          console.log(chalk.bold.cyan(`\n⚡ G0DM0D3 AUTONOMOUS AGENT v1.3.0 // LIBERATED TERMINAL ENGINE`))
+          console.log(chalk.gray(`Runtime: Node ${process.version} | Platform: ${process.platform}-${process.arch}`))
+          console.log(chalk.gray(`Active Model: ${agent.getModel()} | Profile: ${options.profile}\n`))
+          rl.prompt()
+          return
+        }
+
         if (trimmed === '/clear' || trimmed === 'clear' || trimmed === '/reset' || trimmed === 'reset') {
           agent.reset()
           console.log(chalk.green('✓ Agent memory reset to fresh state.\n'))
@@ -930,11 +881,11 @@ program
         }
 
         if (trimmed === '/' || trimmed === '/menu' || trimmed === '/commands') {
+          rl.close()
           if (process.stdin.isTTY) {
-            rl.pause()
             try {
               const selectedCmd = await search({
-                message: chalk.bold.cyan('🤖 Choose Agent Slash Command (type to filter, ↑/↓ to choose, Enter to run):'),
+                message: chalk.bold.cyan('🤖 Choose Agent Slash Command:'),
                 source: async (input) => {
                   const query = (input || '').trim().toLowerCase()
                   const filtered = REPL_COMMANDS.filter(c =>
@@ -949,22 +900,21 @@ program
                   }))
                 },
               })
-              rl.resume()
               if (selectedCmd) {
-                rl.emit('line', selectedCmd)
+                startRepl(selectedCmd)
                 return
               }
             } catch {
-              rl.resume()
+              // canceled
             }
+          } else {
+            console.log(chalk.bold.cyan('\n── 🤖 Agent Slash Commands Menu ────────────────────────────────────'))
+            for (const c of REPL_COMMANDS) {
+              console.log(`  ${chalk.bold.green(c.cmd.padEnd(14))} ${chalk.white(c.desc)}`)
+            }
+            console.log(chalk.bold.cyan('───────────────────────────────────────────────────────────────────\n'))
           }
-
-          console.log(chalk.bold.cyan('\n── 🤖 Agent Slash Commands Menu ────────────────────────────────────'))
-          for (const c of REPL_COMMANDS) {
-            console.log(`  ${chalk.bold.green(c.cmd.padEnd(14))} ${chalk.white(c.desc)}`)
-          }
-          console.log(chalk.bold.cyan('───────────────────────────────────────────────────────────────────\n'))
-          rl.prompt()
+          startRepl()
           return
         }
 
@@ -972,7 +922,7 @@ program
           console.log(chalk.bold.red(`\n❌ Unknown slash command "${trimmed}".`))
           console.log(chalk.gray(`Slash commands are executed directly as agent operations and are never sent to the model for conversational analysis.`))
           console.log(chalk.cyan(`Available commands: ${REPL_COMMANDS.filter(c => c.cmd.startsWith('/')).map(c => c.cmd).join(', ')}`))
-          console.log(chalk.gray(`Type /help for full details or press Tab on "/" for the live menu.\n`))
+          console.log(chalk.gray(`Type /help for full details or type "/" and press Enter for the interactive menu.\n`))
           rl.prompt()
           return
         }
@@ -983,6 +933,8 @@ program
         rl.prompt()
       })
     }
-  })
+    startRepl()
+  }
+})
 
 program.parse(process.argv)
