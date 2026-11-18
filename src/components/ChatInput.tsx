@@ -24,9 +24,28 @@ import {
   Trash2,
   Zap,
   Terminal,
+  CornerDownLeft,
+  Clock,
+  X,
 } from 'lucide-react'
 
 const SLASH_COMMANDS = [
+  {
+    cmd: '/status',
+    label: 'Live Agent Status',
+    desc: 'Check active execution status, turns, and running subtasks mid-chat',
+    icon: Clock,
+    color: 'text-cyan-400',
+    badge: 'Status',
+  },
+  {
+    cmd: '/steer',
+    label: 'Steer Active Session',
+    desc: 'Inject new guidance or commands on top of previous task without resetting',
+    icon: CornerDownLeft,
+    color: 'text-purple-400',
+    badge: 'Steer',
+  },
   {
     cmd: '/pentest',
     label: 'Pentest Specialist Agent',
@@ -159,6 +178,7 @@ export function ChatInput() {
   } = useStore()
 
   const [input, setInput] = useState('')
+  const [queuedMessage, setQueuedMessage] = useState<string | null>(null)
   const [selectedMenuIndex, setSelectedMenuIndex] = useState(0)
   const [isMenuDismissed, setIsMenuDismissed] = useState(false)
   const [showTuneDetails, setShowTuneDetails] = useState(false)
@@ -168,6 +188,18 @@ export function ChatInput() {
   } | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const abortControllerRef = useRef<AbortController | null>(null)
+
+  // Auto-execute queued message when current stream completes
+  useEffect(() => {
+    if (!isStreaming && queuedMessage) {
+      const nextTask = queuedMessage
+      setQueuedMessage(null)
+      const timer = setTimeout(() => {
+        executeMessage(nextTask)
+      }, 100)
+      return () => clearTimeout(timer)
+    }
+  }, [isStreaming, queuedMessage])
 
   const isSlashTyping = input.startsWith('/') && !input.includes(' ') && !isMenuDismissed
   const filteredCommands = isSlashTyping
@@ -247,19 +279,65 @@ export function ChatInput() {
   const proxyMode = !apiKey && !!ultraplinianApiUrl && !!ultraplinianApiKey
 
   const handleSubmit = async () => {
-    const rawInput = input.trim()
+    executeMessage(input)
+  }
+
+  const executeMessage = async (msgText: string) => {
+    const rawInput = msgText.trim()
     const originalMessage = rawInput
-    if (!rawInput || !currentConversationId || isStreaming) return
+    if (!rawInput || !currentConversationId) return
     if (!apiKey && !proxyMode) return
 
     setInput('')
     setIsMenuDismissed(false)
+
+    // ── MID-STREAM HANDLING (SENDING MESSAGE MID-CHAT LIKE CODEX/CLAUDE) ──
+    if (isStreaming) {
+      const lower = rawInput.toLowerCase()
+      if (rawInput === '/status' || rawInput === '/explain' || lower === 'status' || lower === "what's the status" || lower === "whats the status" || lower === "explain") {
+        addMessage(currentConversationId, {
+          role: 'assistant',
+          content: `### 📊 Live Agent Status (Mid-Run)\n• **Active Model:** \`${currentConversation?.model || 'active'}\`\n• **Status:** Generating response / executing agent turn...\n• **Queued Messages:** ${queuedMessage ? `1 waiting ("${queuedMessage.slice(0, 40)}...")` : 'None'}\n• **Pipeline Modules:** AutoTune ${autoTuneEnabled ? '🟢 Active' : '⚪ Off'} · Parseltongue ${parseltongueConfig.enabled ? '🟢 Active' : '⚪ Off'}\n\n*Your generation is running in real-time. Type instructions to queue or steer, or click Stop to halt.*`,
+          model: 'system',
+        })
+        return
+      }
+
+      // Queue follow-up or steering command
+      setQueuedMessage(rawInput)
+      addMessage(currentConversationId, {
+        role: 'user',
+        content: `⏳ [QUEUED FOLLOW-UP]: ${rawInput}`,
+      })
+      return
+    }
 
     // ── INTERCEPT SLASH COMMANDS (DO NOT SEND TO LLM FOR ANALYSIS) ──
     if (rawInput.startsWith('/')) {
       const parts = rawInput.split(' ')
       const command = parts[0].toLowerCase()
       const task = parts.slice(1).join(' ').trim()
+
+      if (command === '/status' || command === '/explain') {
+        const lastMsg = currentConversation?.messages?.slice(-1)[0]
+        addMessage(currentConversationId, {
+          role: 'assistant',
+          content: `### 📊 Session Status & State\n• **Active Model:** \`${currentConversation?.model || 'active'}\`\n• **Messages in Context:** ${currentConversation?.messages?.length || 0}\n• **Active Persona:** ${personas.find(p => p.id === currentConversation?.persona)?.name || 'Default'}\n• **AutoTune:** ${autoTuneEnabled ? '🟢 Active' : '⚪ Disabled'}\n• **Parseltongue:** ${parseltongueConfig.enabled ? '🟢 Active' : '⚪ Disabled'}\n• **Last Output:**\n> ${String(lastMsg?.content || 'Session active').slice(0, 220).replace(/\n/g, ' ')}...`,
+          model: 'system',
+        })
+        return
+      }
+
+      if (command === '/steer' || command === '/add') {
+        if (!task) {
+          addMessage(currentConversationId, {
+            role: 'assistant',
+            content: `⚡ **Usage:** \`/steer <instruction or command to add over previous session>\`\n\nExample: \`/steer also check if port 8080 has file upload vulnerabilities\``,
+            model: currentConversation?.model || 'system',
+          })
+          return
+        }
+      }
 
       if (command === '/clear' || command === '/reset') {
         const newId = createConversation()
@@ -369,7 +447,11 @@ export function ChatInput() {
     let taskPrompt = rawInput
     let agentDirective = ''
 
-    if (rawInput.startsWith('/pentest')) {
+    if (rawInput.startsWith('/steer') || rawInput.startsWith('/add')) {
+      const task = rawInput.replace(/^\/(steer|add)\s*/, '').trim()
+      displayedUserMessage = `⚡ [STEERING INJECTED] ${task}`
+      taskPrompt = `[USER GUIDANCE ADDED OVER PREVIOUS RUN]:\n${task}`
+    } else if (rawInput.startsWith('/pentest')) {
       const task = rawInput.replace(/^\/pentest\s*/, '').trim()
       displayedUserMessage = `🛡️ [PENTEST AGENT] ${task}`
       taskPrompt = task
@@ -1086,6 +1168,39 @@ Your mission: Decompose complex objectives into ordered milestones, actionable t
           </div>
         )}
 
+        {/* Queued Follow-up Message Banner */}
+        {queuedMessage && (
+          <div className="mb-2 px-3 py-2 rounded-xl bg-cyan-950/40 border border-cyan-500/40 backdrop-blur flex items-center justify-between text-xs font-mono shadow-lg animate-pulse-glow">
+            <div className="flex items-center gap-2 text-cyan-300 truncate">
+              <Clock className="w-4 h-4 text-cyan-400 flex-shrink-0 animate-spin" />
+              <span className="font-bold uppercase tracking-wider text-[10px] px-1.5 py-0.5 rounded bg-cyan-500/20 border border-cyan-500/40">
+                Queued Next
+              </span>
+              <span className="truncate text-gray-200">"{queuedMessage}"</span>
+            </div>
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <button
+                type="button"
+                onClick={() => {
+                  setInput(queuedMessage)
+                  setQueuedMessage(null)
+                }}
+                className="text-[11px] text-cyan-400 hover:underline px-2 py-0.5"
+              >
+                Edit
+              </button>
+              <button
+                type="button"
+                onClick={() => setQueuedMessage(null)}
+                className="p-1 text-gray-400 hover:text-red-400 transition-colors"
+                title="Discard queued message"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+        )}
+
         <div className="flex items-end gap-3">
           <div className="flex-1 relative">
             <textarea
@@ -1093,13 +1208,21 @@ Your mission: Decompose complex objectives into ordered milestones, actionable t
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder={(apiKey || proxyMode) ? "Enter your message... (Shift+Enter for new line)" : "Set your API key in Settings first"}
-              disabled={(!apiKey && !proxyMode) || isStreaming}
+              placeholder={
+                !apiKey && !proxyMode
+                  ? "Set your API key in Settings first"
+                  : isStreaming
+                  ? "Send guidance mid-run (e.g. 'explain this', 'what is the status?', 'also check x')..."
+                  : "Enter your message or type / for commands... (Shift+Enter for new line)"
+              }
+              disabled={!apiKey && !proxyMode}
               rows={1}
-              className="w-full px-4 py-3 pr-12 bg-theme-bg border border-theme-primary rounded-lg
+              className={`w-full px-4 py-3 pr-12 bg-theme-bg border rounded-lg
                 resize-none focus:outline-none focus:glow-box
                 placeholder:theme-secondary disabled:opacity-50
-                transition-all duration-200"
+                transition-all duration-200 ${
+                  isStreaming ? 'border-cyan-500/50 shadow-[0_0_15px_rgba(6,182,212,0.15)]' : 'border-theme-primary'
+                }`}
               style={{ minHeight: '48px', maxHeight: '200px' }}
             />
 
@@ -1111,32 +1234,44 @@ Your mission: Decompose complex objectives into ordered milestones, actionable t
             )}
           </div>
 
-          {/* Submit/Stop button */}
-          {isStreaming ? (
-            <button
-              onClick={handleStop}
-              className="p-3 bg-red-500/20 border border-red-500 rounded-lg
-                hover:bg-red-500/30 transition-all"
-              aria-label="Stop generation"
-            >
-              <StopCircle className="w-5 h-5 text-red-500" />
-            </button>
-          ) : (
+          {/* Action buttons (Stop + Queue/Send) */}
+          <div className="flex items-center gap-2">
+            {isStreaming && (
+              <button
+                type="button"
+                onClick={handleStop}
+                className="p-3 bg-red-500/20 border border-red-500 rounded-lg
+                  hover:bg-red-500/30 transition-all text-red-400 flex items-center gap-1.5"
+                title="Stop generation"
+                aria-label="Stop generation"
+              >
+                <StopCircle className="w-5 h-5 text-red-500" />
+                <span className="text-xs font-mono font-bold hidden sm:inline">Stop</span>
+              </button>
+            )}
+
             <button
               onClick={handleSubmit}
               disabled={!input.trim() || (!apiKey && !proxyMode)}
-              className="p-3 bg-theme-accent border border-theme-primary rounded-lg
-                hover:glow-box transition-all
-                disabled:opacity-50 disabled:cursor-not-allowed"
-              aria-label="Send message"
+              className={`p-3 border rounded-lg hover:glow-box transition-all flex items-center gap-1.5
+                disabled:opacity-50 disabled:cursor-not-allowed ${
+                  isStreaming
+                    ? 'bg-cyan-500/20 border-cyan-500/60 text-cyan-300 hover:bg-cyan-500/30'
+                    : 'bg-theme-accent border-theme-primary text-white'
+                }`}
+              title={isStreaming ? "Queue command or steer mid-run" : "Send message"}
+              aria-label={isStreaming ? "Queue command or steer" : "Send message"}
             >
               {isStreaming ? (
-                <Loader2 className="w-5 h-5 animate-spin" />
+                <>
+                  <CornerDownLeft className="w-4 h-4 text-cyan-400" />
+                  <span className="text-xs font-mono font-bold hidden sm:inline">Queue</span>
+                </>
               ) : (
                 <Send className="w-5 h-5" />
               )}
             </button>
-          )}
+          </div>
         </div>
 
         {/* Status indicators */}

@@ -312,6 +312,10 @@ program
     } else {
       // Interactive REPL Mode
       const REPL_COMMANDS = [
+        { cmd: '/status', desc: 'Show live agent status, turns taken, and active subtasks' },
+        { cmd: '/explain', desc: 'Explain current agent state, recent thoughts, and findings' },
+        { cmd: '/steer', desc: 'Inject new guidance/commands on top of active session: /steer <instructions>' },
+        { cmd: '/add', desc: 'Alias for /steer: add instructions over previous run' },
         { cmd: '/pentest', desc: 'Launch offensive security pentester subagent on target/task' },
         { cmd: '/research', desc: 'Launch deep research subagent to audit code and docs' },
         { cmd: '/code', desc: 'Launch autonomous coding subagent to implement code' },
@@ -375,6 +379,28 @@ program
             console.log(`  ${chalk.bold.green(c.cmd.padEnd(14))} ${chalk.white(c.desc)}`)
           }
           console.log('')
+          rl.prompt()
+          return
+        }
+
+        // Live Status & State Explanation
+        if (trimmed === '/status' || trimmed === '/explain') {
+          console.log(chalk.bold.cyan(`\n${agent.explainState()}\n`))
+          rl.prompt()
+          return
+        }
+
+        // Mid-run Steering / Add command on top of active session
+        if (trimmed.startsWith('/steer ') || trimmed.startsWith('/add ') || trimmed === '/steer' || trimmed === '/add') {
+          const guidance = trimmed.replace(/^\/(steer|add)\s*/, '').trim()
+          if (!guidance) {
+            console.log(chalk.yellow('Usage: /steer <instruction or command to add over the previous one>\nExample: /steer also check if port 8080 is accessible\n'))
+            rl.prompt()
+            return
+          }
+          console.log(chalk.bold.magenta(`\n⚡ [STEERING INJECTED] Adding command over active session:`))
+          console.log(chalk.white(`"${guidance}"\n`))
+          await runAgentWithUi(guidance, true)
           rl.prompt()
           return
         }

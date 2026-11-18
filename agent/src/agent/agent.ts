@@ -91,6 +91,48 @@ export class GodModeAgent {
     this.model = newModel
   }
 
+  getCurrentGoal(): string {
+    return this.currentGoal
+  }
+
+  injectSteeringMessage(message: string) {
+    this.messages.push({
+      role: 'user',
+      content: `[USER MID-RUN GUIDANCE / COMMAND INJECTION]:\n${message}`,
+    })
+  }
+
+  getStatus() {
+    return {
+      sessionId: this.currentSessionId,
+      goal: this.currentGoal,
+      model: this.model,
+      turnsTaken: this.messages.filter(m => m.role === 'assistant').length,
+      todos: getActiveTodos(),
+      memory: getActiveMemory(),
+    }
+  }
+
+  explainState(): string {
+    const todos = getActiveTodos()
+    const memory = getActiveMemory()
+    const completed = todos.filter(t => t.status === 'completed').length
+    const assistantMsgs = this.messages.filter(m => m.role === 'assistant')
+    const lastThought = assistantMsgs.length > 0 ? assistantMsgs[assistantMsgs.length - 1].content : 'Ready for execution'
+
+    return [
+      `### 📊 Live Agent Status & Session State`,
+      `• **Session ID:** \`${this.currentSessionId}\``,
+      `• **Active Goal:** "${this.currentGoal || 'Awaiting goal'}"`,
+      `• **Model:** \`${this.model}\``,
+      `• **Turns Taken:** ${assistantMsgs.length}`,
+      `• **Plan Progress:** ${completed}/${todos.length} subtasks completed`,
+      todos.length > 0 ? `• **Current Target:** "${todos.find(t => t.status === 'in_progress')?.task || todos.find(t => t.status === 'pending')?.task || 'Reviewing findings'}"` : '',
+      `• **Recent Memory Keys:** ${Object.keys(memory).length > 0 ? Object.keys(memory).join(', ') : 'None yet'}`,
+      `• **Last Action/Thought:**\n> ${String(lastThought || '').slice(0, 220).replace(/\n/g, ' ')}...`,
+    ].filter(Boolean).join('\n')
+  }
+
   exportSession(status: AgentSession['status'] = 'active', costSummary = '', currentRunTurns = 0): AgentSession {
     return {
       id: this.currentSessionId,
