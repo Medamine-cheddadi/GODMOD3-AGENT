@@ -128,6 +128,32 @@ const SLASH_COMMANDS = [
   },
 ]
 
+const PROMPT_HISTORY_KEY = 'godmod3_prompt_history'
+const MAX_PROMPT_HISTORY = 100
+
+function getStoredPromptHistory(): string[] {
+  if (typeof window === 'undefined') return []
+  try {
+    const raw = localStorage.getItem(PROMPT_HISTORY_KEY)
+    return raw ? JSON.parse(raw) : []
+  } catch {
+    return []
+  }
+}
+
+function savePromptToHistory(prompt: string) {
+  if (typeof window === 'undefined') return
+  const trimmed = prompt.trim()
+  if (!trimmed) return
+  try {
+    const existing = getStoredPromptHistory().filter((p) => p !== trimmed)
+    const updated = [trimmed, ...existing].slice(0, MAX_PROMPT_HISTORY)
+    localStorage.setItem(PROMPT_HISTORY_KEY, JSON.stringify(updated))
+  } catch {
+    // ignore
+  }
+}
+
 export function ChatInput() {
   const {
     currentConversationId,
@@ -197,6 +223,8 @@ export function ChatInput() {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const abortControllerRef = useRef<AbortController | null>(null)
   const wasAbortedRef = useRef(false)
+  const [historyIndex, setHistoryIndex] = useState<number | null>(null)
+  const tempInputRef = useRef<string>('')
 
   // Auto-execute queued message when current stream completes
   useEffect(() => {
@@ -320,6 +348,9 @@ export function ChatInput() {
 
     setInput('')
     setIsMenuDismissed(false)
+    savePromptToHistory(rawInput)
+    setHistoryIndex(null)
+    tempInputRef.current = ''
 
     // ── MID-STREAM HANDLING (SENDING MESSAGE MID-CHAT LIKE CODEX/CLAUDE) ──
     if (isStreaming) {
@@ -1072,6 +1103,40 @@ Your mission: Decompose complex objectives into ordered milestones, actionable t
       if (e.key === 'Escape') {
         e.preventDefault()
         setIsMenuDismissed(true)
+        return
+      }
+    }
+
+    // ArrowUp / ArrowDown navigation for persistent shell & prompt history
+    if (!showSlashMenu) {
+      if (e.key === 'ArrowUp' && (e.currentTarget.selectionStart === 0 || input === '')) {
+        const history = getStoredPromptHistory()
+        if (history.length > 0) {
+          e.preventDefault()
+          if (historyIndex === null) {
+            tempInputRef.current = input
+            setHistoryIndex(0)
+            setInput(history[0])
+          } else if (historyIndex < history.length - 1) {
+            const nextIdx = historyIndex + 1
+            setHistoryIndex(nextIdx)
+            setInput(history[nextIdx])
+          }
+          return
+        }
+      }
+
+      if (e.key === 'ArrowDown' && historyIndex !== null) {
+        e.preventDefault()
+        const history = getStoredPromptHistory()
+        if (historyIndex > 0) {
+          const nextIdx = historyIndex - 1
+          setHistoryIndex(nextIdx)
+          setInput(history[nextIdx])
+        } else {
+          setHistoryIndex(null)
+          setInput(tempInputRef.current)
+        }
         return
       }
     }

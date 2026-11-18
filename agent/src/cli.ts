@@ -1,5 +1,8 @@
 #!/usr/bin/env node
 
+import fs from 'fs'
+import path from 'path'
+import os from 'os'
 import { Command } from 'commander'
 import readline from 'readline'
 import chalk from 'chalk'
@@ -25,6 +28,40 @@ ${chalk.gray('──────────────────────
 ${chalk.bold.white(' ░▒▓█  G0DM0D3 AUTONOMOUS AGENT // LIBERATED REAC ENGINE  █▓▒░')}
 ${chalk.gray('─────────────────────────────────────────────────────────────')}
 `
+
+const CLI_HISTORY_FILE = path.join(os.homedir(), '.godmod3', 'history')
+const MAX_HISTORY_LINES = 1000
+
+function loadCliHistory(): string[] {
+  try {
+    if (fs.existsSync(CLI_HISTORY_FILE)) {
+      const lines = fs
+        .readFileSync(CLI_HISTORY_FILE, 'utf-8')
+        .split('\n')
+        .map((l) => l.trim())
+        .filter(Boolean)
+      // Node readline stores history in reverse chronological order (most recent at index 0)
+      return lines.reverse().slice(0, MAX_HISTORY_LINES)
+    }
+  } catch {
+    // ignore
+  }
+  return []
+}
+
+function appendCliHistory(line: string) {
+  const trimmed = line.trim()
+  if (!trimmed) return
+  try {
+    const dir = path.dirname(CLI_HISTORY_FILE)
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true })
+    }
+    fs.appendFileSync(CLI_HISTORY_FILE, `${trimmed}\n`, 'utf-8')
+  } catch {
+    // ignore
+  }
+}
 
 const program = new Command()
 
@@ -343,6 +380,7 @@ program
 
       console.log(chalk.bold.cyan(`\n🤖 Interactive Agent REPL`))
       console.log(chalk.gray(`Type tasks directly for autonomous execution, or use slash commands below:`))
+      console.log(chalk.dim(`(Persistent shell history active: use ↑ / ↓ arrows to cycle past commands across sessions)\n`))
       console.log(chalk.bold.magenta(`Commands Menu:`) + chalk.gray(` (Press Tab on "/" for live autocomplete)\n`))
       for (const c of REPL_COMMANDS.slice(0, 10)) {
         console.log(`  ${chalk.bold.green(c.cmd.padEnd(12))} ${chalk.white(c.desc)}`)
@@ -353,6 +391,7 @@ program
         input: process.stdin,
         output: process.stdout,
         prompt: chalk.bold.magenta('godmod3> '),
+        historySize: MAX_HISTORY_LINES,
         completer: (line: string) => {
           const trimmed = line.trim()
           const hits = REPL_COMMANDS.filter(c => c.cmd.startsWith(trimmed))
@@ -366,6 +405,12 @@ program
           return [hits.map(h => h.cmd), line]
         },
       })
+
+      // Load persistent shell history across CLI sessions
+      const persistedHistory = loadCliHistory()
+      if (persistedHistory.length > 0) {
+        ;(rl as any).history = persistedHistory
+      }
 
       rl.prompt()
 
@@ -382,6 +427,9 @@ program
 
       rl.on('line', async (line) => {
         const trimmed = line.trim()
+        if (trimmed) {
+          appendCliHistory(trimmed)
+        }
         if (trimmed === 'exit' || trimmed === 'quit') {
           rl.close()
           process.exit(0)
