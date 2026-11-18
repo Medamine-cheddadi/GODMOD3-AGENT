@@ -1,0 +1,7 @@
+interface:
+  display_name: "Solve Labs and Assignments"
+  short_description: "Solve coursework and create natural student reports"
+  default_prompt: "Use $solve-labs-assignments to complete this lab or assignment, verify the answers, and prepare the required files with natural student writing and real screenshots where relevant."
+
+policy:
+  allow_implicit_invocation: true

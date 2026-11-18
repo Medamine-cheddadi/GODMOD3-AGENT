@@ -167,7 +167,57 @@ Hidden throughout G0DM0D3 are various easter eggs. Happy hunting!
 - **Rendering**: Built-in message formatter in `index.html`
 - **State**: In-browser localStorage
 - **Telemetry**: Optional Cloudflare Pages Function publishing batches to Hugging Face
-- **Additional surfaces**: Optional React/Next.js frontend (`src/`) and Node/Express API server (`api/`)
+- **Additional surfaces**: Optional React/Next.js frontend (`src/`), Node/Express API server (`api/`), Autonomous ReAct Agent CLI (`agent/`), and Security Skills Suite (`skills/`)
+
+## 🤖 G0DM0D3 Autonomous Agent (`godmod3-agent`)
+
+The repository includes a production-grade, liberated autonomous ReAct agent CLI with recursive tool execution, checkpoint rollbacks, refusal failovers, and specialist subagent spawning.
+
+### Quick Start: Agent CLI
+
+```bash
+# 1. Install dependencies and build
+npm install
+npm run agent:build
+
+# 2. Globally link the CLI binary
+npm link
+
+# 3. Launch the agent
+godmod3-agent "Audit all dependencies and summarize open vulnerabilities"
+```
+
+### Specialist Subagents
+
+Spawn focused specialist agents directly or delegate recursively from within tasks:
+```bash
+# Researcher: Deep workspace and documentation analysis
+godmod3-agent -s researcher "Search the codebase for hardcoded credentials"
+
+# Pentester: Offensive security testing and payload validation
+godmod3-agent -s pentester "Inspect the upload endpoint and design a file upload bypass"
+
+# Coder: High-velocity code generation and test execution
+godmod3-agent -s coder "Implement an LRU cache with unit tests in scratch/lru.ts"
+```
+
+### REPL Interactive Commands
+
+Run `godmod3-agent` without arguments to launch the interactive REPL:
+- `/spawn <role> <task>` — Spawn an isolated specialist subagent
+- `/subagents` — List available specialist personas
+- `/diff [file]` — View working tree git diff for session changes
+- `/undo` — Revert file modifications made in the last turn
+- `/checkpoints` — List snapshots for the active session
+
+## 🛡️ Built-in Security & Pentesting Skills (`skills/`)
+
+The `skills/` directory contains 40+ standardized pentesting methodologies adhering to standard `SKILL.md` format:
+- **Injection**: `sqli`, `blindsqli`, `nosqli`, `command-injection`, `crlf-injection`, `ldap-injection`
+- **Client-Side**: `xss`, `xss-reflected`, `xss-stored`, `xss-dom`, `xss-blind`, `csrf`, `cors`, `clickjacking`
+- **Server-Side**: `ssrf`, `ssti`, `xxe`, `file-upload`, `path-traversal`, `deserialization`
+- **Cache & Web**: `cache-deception`, `web-cache-poisoning`, `host-header-injection`, `hpp`
+- **Auth & API**: `jwt-attacks`, `auth-bypass`, `idor`, `oauth`, `mass-assignment`, `graphql-vulns`
 
 ## 📁 Project Structure
 
@@ -175,8 +225,10 @@ Hidden throughout G0DM0D3 are various easter eggs. Happy hunting!
 G0DM0D3/
 ├── index.html        # Standalone hosted UI, logic, and styles
 ├── functions/api/    # Cloudflare Pages telemetry endpoint
-├── src/              # Optional React/Next.js frontend
-├── api/              # Optional Node.js/Express API server
+├── src/              # Next.js frontend and pipeline libraries
+├── api/              # Node.js/Express API pipeline (OpenAI-compatible)
+├── agent/            # Autonomous ReAct Agent engine, tools, and CLI
+├── skills/           # 40+ Offensive security & pentest skill suites
 ├── API.md            # API documentation
 ├── PAPER.md          # Research paper
 ├── TERMS.md          # Terms of service and data transparency
