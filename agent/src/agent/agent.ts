@@ -41,6 +41,9 @@ export class GodModeAgent {
   private currentGoal: string = ''
   private completedTasks: string[] = []
   private excludedTools: string[] = []
+  private isRunning: boolean = false
+  private isStopped: boolean = false
+  private currentAbortController?: AbortController
 
   constructor(opts?: { client?: GodModeClient; model?: string; session?: AgentSession; excludedTools?: string[] }) {
     this.client = opts?.client || new GodModeClient()
@@ -100,6 +103,21 @@ export class GodModeAgent {
       role: 'user',
       content: `[USER MID-RUN GUIDANCE / COMMAND INJECTION]:\n${message}`,
     })
+  }
+
+  stop(reason = 'Task stopped by user') {
+    this.isStopped = true
+    if (this.currentAbortController) {
+      try {
+        this.currentAbortController.abort(reason)
+      } catch {
+        // ignore
+      }
+    }
+  }
+
+  isTaskRunning(): boolean {
+    return this.isRunning
   }
 
   getStatus() {
@@ -191,18 +209,38 @@ export class GodModeAgent {
     let finalAnswer = ''
     const recentToolSignatures: string[] = []
 
+    this.isRunning = true
+    this.isStopped = false
+    this.currentAbortController = new AbortController()
+
+    if (opts.signal) {
+      if (opts.signal.aborted) {
+        this.stop('Aborted before start')
+      } else {
+        opts.signal.addEventListener('abort', () => {
+          this.stop('Aborted by signal')
+        }, { once: true })
+      }
+    }
+
     // Persist session before beginning execution
     saveSession(this.exportSession('active', costTracker.formatSummary(), runTurn))
 
     // Graceful interrupt handler to ensure state is saved if interrupted
     const sigintHandler = () => {
+      this.stop('Interrupted by SIGINT')
       saveSession(this.exportSession('interrupted', costTracker.formatSummary(), runTurn))
-      process.exit(130)
     }
     process.on('SIGINT', sigintHandler)
 
     try {
       while (!isFinished) {
+        if (this.isStopped) {
+          isFinished = true
+          finalAnswer = finalAnswer || '[🛑 Task stopped by user]'
+          break
+        }
+
         if (runTurn >= maxTurns) {
           if (opts.onTurnLimitReached) {
             const extra = await opts.onTurnLimitReached(runTurn)
@@ -229,17 +267,34 @@ export class GodModeAgent {
         // Prune and compact history to keep context clean & save tokens
         const messagesToSend = compactHistory(this.messages)
 
-        const completion = await this.client.chatCompletion({
-          model: activeModel,
-          messages: messagesToSend,
-          tools,
-          temperature: 0.3,
-          godmode: true,
-          autotune: true,
-          parseltongue: false, // keep tools cleanly parseable
-          stm_modules: ['hedge_reducer', 'direct_mode'],
-          max_tokens: config.maxOutputTokens,
-        })
+        let completion: any
+        try {
+          completion = await this.client.chatCompletion({
+            model: activeModel,
+            messages: messagesToSend,
+            tools,
+            temperature: 0.3,
+            godmode: true,
+            autotune: true,
+            parseltongue: false, // keep tools cleanly parseable
+            stm_modules: ['hedge_reducer', 'direct_mode'],
+            max_tokens: config.maxOutputTokens,
+            signal: this.currentAbortController?.signal,
+          })
+        } catch (apiErr: any) {
+          if (this.isStopped || apiErr.name === 'AbortError' || apiErr.message?.toLowerCase().includes('abort')) {
+            isFinished = true
+            finalAnswer = '[🛑 Task stopped by user]'
+            break
+          }
+          throw apiErr
+        }
+
+        if (this.isStopped) {
+          isFinished = true
+          finalAnswer = finalAnswer || '[🛑 Task stopped by user]'
+          break
+        }
 
         if (completion.usage) {
           costTracker.addUsage(completion.usage)
@@ -292,6 +347,11 @@ export class GodModeAgent {
         // Check if there are tool calls
         if (assistantMsg.tool_calls && assistantMsg.tool_calls.length > 0) {
           for (const tc of assistantMsg.tool_calls) {
+            if (this.isStopped) {
+              isFinished = true
+              finalAnswer = finalAnswer || '[🛑 Task stopped by user]'
+              break
+            }
             const toolName = tc.function.name
             let toolArgs: any
             try {
@@ -365,24 +425,33 @@ export class GodModeAgent {
         finalAnswer = `[Notice: Agent reached turn limit (${maxTurns}) for current task. You can continue or resume anytime using --resume or run with --unlimited.]\n\nLast thought:\n${this.messages[this.messages.length - 1]?.content || ''}`
       }
 
-      if (isFinished) {
+      if (isFinished && !this.isStopped) {
         this.completedTasks.push(this.currentGoal)
       }
 
-      const finalStatus = isFinished ? 'completed' : 'interrupted'
+      const finalStatus = (isFinished && !this.isStopped) ? 'completed' : 'interrupted'
       saveSession(this.exportSession(finalStatus, costTracker.formatSummary(), runTurn))
 
       return {
-        finalAnswer,
+        finalAnswer: finalAnswer || (this.isStopped ? '[🛑 Task stopped by user]' : '(Completed without output)'),
         costSummary: costTracker.formatSummary(),
         sessionId: this.currentSessionId,
       }
     } catch (err: any) {
+      if (this.isStopped || err.name === 'AbortError' || err.message?.toLowerCase().includes('abort')) {
+        saveSession(this.exportSession('interrupted', costTracker.formatSummary(), runTurn))
+        return {
+          finalAnswer: '[🛑 Task stopped by user]',
+          costSummary: costTracker.formatSummary(),
+          sessionId: this.currentSessionId,
+        }
+      }
       saveSession(this.exportSession('error', costTracker.formatSummary(), runTurn))
       opts.onStep?.(runTurn, 'Error', err.message, costTracker.formatSummary())
       throw err
     } finally {
       process.removeListener('SIGINT', sigintHandler)
+      this.isRunning = false
     }
   }
 }

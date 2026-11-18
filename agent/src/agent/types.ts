@@ -77,6 +77,7 @@ export interface AgentRunOptions {
   sessionId?: string
   resumeSession?: AgentSession
   requireApproval?: boolean
+  signal?: AbortSignal
   onStep?: (turn: number, action: string, detail?: string, costSummary?: string) => void
   onToolCall?: (toolName: string, args: any) => void
   onToolResult?: (toolName: string, result: string) => void

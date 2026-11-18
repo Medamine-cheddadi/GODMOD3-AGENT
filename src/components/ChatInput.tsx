@@ -31,6 +31,14 @@ import {
 
 const SLASH_COMMANDS = [
   {
+    cmd: '/stop',
+    label: 'Stop Task / Prompt',
+    desc: 'Immediately stop active generation, autonomous agent task, or race (Esc)',
+    icon: StopCircle,
+    color: 'text-red-400',
+    badge: 'Stop',
+  },
+  {
     cmd: '/status',
     label: 'Live Agent Status',
     desc: 'Check active execution status, turns, and running subtasks mid-chat',
@@ -188,10 +196,16 @@ export function ChatInput() {
   } | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const abortControllerRef = useRef<AbortController | null>(null)
+  const wasAbortedRef = useRef(false)
 
   // Auto-execute queued message when current stream completes
   useEffect(() => {
     if (!isStreaming && queuedMessage) {
+      if (wasAbortedRef.current) {
+        // Generation was intentionally stopped by user; do not auto-dispatch queued message
+        wasAbortedRef.current = false
+        return
+      }
       const nextTask = queuedMessage
       setQueuedMessage(null)
       const timer = setTimeout(() => {
@@ -206,6 +220,22 @@ export function ChatInput() {
     ? SLASH_COMMANDS.filter(c => c.cmd.toLowerCase().startsWith(input.trim().toLowerCase()))
     : []
   const showSlashMenu = isSlashTyping && filteredCommands.length > 0
+
+  // Global Escape key handler to immediately stop generation anywhere on the page
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: globalThis.KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (showSlashMenu) {
+          setIsMenuDismissed(true)
+        } else if (isStreaming) {
+          e.preventDefault()
+          handleStop()
+        }
+      }
+    }
+    window.addEventListener('keydown', handleGlobalKeyDown)
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown)
+  }, [isStreaming, showSlashMenu])
 
   const selectCommand = (cmd: string) => {
     setInput(`${cmd} `)
@@ -294,6 +324,12 @@ export function ChatInput() {
     // ── MID-STREAM HANDLING (SENDING MESSAGE MID-CHAT LIKE CODEX/CLAUDE) ──
     if (isStreaming) {
       const lower = rawInput.toLowerCase()
+      // Stop or cancel mid-stream
+      if (rawInput === '/stop' || rawInput === '/cancel' || rawInput === '/abort' || lower === 'stop' || lower === 'cancel') {
+        handleStop()
+        return
+      }
+
       if (rawInput === '/status' || rawInput === '/explain' || lower === 'status' || lower === "what's the status" || lower === "whats the status" || lower === "explain") {
         addMessage(currentConversationId, {
           role: 'assistant',
@@ -317,6 +353,15 @@ export function ChatInput() {
       const parts = rawInput.split(' ')
       const command = parts[0].toLowerCase()
       const task = parts.slice(1).join(' ').trim()
+
+      if (command === '/stop' || command === '/cancel' || command === '/abort') {
+        addMessage(currentConversationId, {
+          role: 'assistant',
+          content: '🛑 *No active task or prompt is currently running.* (During generation, press Esc, click Stop, or type `/stop` to halt immediately).',
+          model: 'system',
+        })
+        return
+      }
 
       if (command === '/status' || command === '/explain') {
         const lastMsg = currentConversation?.messages?.slice(-1)[0]
@@ -567,17 +612,20 @@ Your mission: Decompose complex objectives into ordered milestones, actionable t
       setAutoTuneLastResult(tuneResult)
     }
 
+    let activeAssistantMsgId: string | null = null
+
     try {
       abortControllerRef.current = new AbortController()
 
       // ── CONSORTIUM PATH: Hive-mind synthesis ──────────────────────
       if (consortiumEnabled && ultraplinianApiUrl && ultraplinianApiKey && !ultraplinianEnabled) {
-        const assistantMsgId = addMessage(currentConversationId, {
+        activeAssistantMsgId = addMessage(currentConversationId, {
           role: 'assistant',
           content: '',
           model: 'consortium',
           persona: persona.id,
         })
+        const assistantMsgId = activeAssistantMsgId
 
         setConsortiumPhase('collecting')
         resetConsortium()
@@ -654,12 +702,13 @@ Your mission: Decompose complex objectives into ordered milestones, actionable t
       // ── ULTRAPLINIAN PATH: Multi-model race with liquid response ──
       if (ultraplinianEnabled && ultraplinianApiUrl && ultraplinianApiKey) {
         // Add placeholder assistant message that we'll update live
-        const assistantMsgId = addMessage(currentConversationId, {
+        activeAssistantMsgId = addMessage(currentConversationId, {
           role: 'assistant',
           content: '',
           model: 'ultraplinian',
           persona: persona.id,
         })
+        const assistantMsgId = activeAssistantMsgId
 
         setUltraplinianRacing(true)
         resetUltraplinianRace()
@@ -889,13 +938,21 @@ Your mission: Decompose complex objectives into ordered milestones, actionable t
       }
     } catch (error: any) {
       resetUltraplinianRace()
-      if (error.name === 'AbortError') {
-        addMessage(currentConversationId, {
-          role: 'assistant',
-          content: '_[Response stopped by user]_',
-          model,
-          persona: persona.id
-        })
+      const isAborted = error.name === 'AbortError' ||
+        (error.message && error.message.toLowerCase().includes('abort')) ||
+        (error.message && error.message.toLowerCase().includes('cancel'))
+
+      if (isAborted) {
+        if (activeAssistantMsgId) {
+          updateMessageContent(currentConversationId, activeAssistantMsgId, '🛑 *[Task/Prompt stopped by user]*')
+        } else {
+          addMessage(currentConversationId, {
+            role: 'assistant',
+            content: '🛑 *[Task/Prompt stopped by user]*',
+            model,
+            persona: persona.id,
+          })
+        }
         recordChatEvent({
           mode: ultraplinianEnabled ? 'ultraplinian' : 'standard',
           model,
@@ -970,12 +1027,29 @@ Your mission: Decompose complex objectives into ordered milestones, actionable t
   }
 
   const handleStop = () => {
+    wasAbortedRef.current = true
     if (abortControllerRef.current) {
-      abortControllerRef.current.abort()
+      try {
+        abortControllerRef.current.abort('Stopped by user')
+      } catch {
+        // ignore
+      }
     }
   }
 
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Escape') {
+      if (showSlashMenu) {
+        e.preventDefault()
+        setIsMenuDismissed(true)
+        return
+      }
+      if (isStreaming) {
+        e.preventDefault()
+        handleStop()
+        return
+      }
+    }
     if (showSlashMenu && filteredCommands.length > 0) {
       if (e.key === 'ArrowDown') {
         e.preventDefault()
@@ -1240,13 +1314,13 @@ Your mission: Decompose complex objectives into ordered milestones, actionable t
               <button
                 type="button"
                 onClick={handleStop}
-                className="p-3 bg-red-500/20 border border-red-500 rounded-lg
-                  hover:bg-red-500/30 transition-all text-red-400 flex items-center gap-1.5"
-                title="Stop generation"
-                aria-label="Stop generation"
+                className="p-3 bg-red-500/20 border border-red-500/80 rounded-lg
+                  hover:bg-red-500/30 transition-all text-red-400 flex items-center gap-1.5 shadow-[0_0_12px_rgba(239,68,68,0.25)]"
+                title="Stop generation or agent task (Esc or /stop)"
+                aria-label="Stop generation or agent task"
               >
-                <StopCircle className="w-5 h-5 text-red-500" />
-                <span className="text-xs font-mono font-bold hidden sm:inline">Stop</span>
+                <StopCircle className="w-5 h-5 text-red-500 animate-pulse" />
+                <span className="text-xs font-mono font-bold hidden sm:inline">Stop (Esc)</span>
               </button>
             )}
 

@@ -312,6 +312,8 @@ program
     } else {
       // Interactive REPL Mode
       const REPL_COMMANDS = [
+        { cmd: '/stop', desc: 'Stop active task or prompt execution (or press Ctrl+C)' },
+        { cmd: '/cancel', desc: 'Alias for /stop: cancel active execution' },
         { cmd: '/status', desc: 'Show live agent status, turns taken, and active subtasks' },
         { cmd: '/explain', desc: 'Explain current agent state, recent thoughts, and findings' },
         { cmd: '/steer', desc: 'Inject new guidance/commands on top of active session: /steer <instructions>' },
@@ -366,11 +368,34 @@ program
 
       rl.prompt()
 
+      rl.on('SIGINT', () => {
+        if (agent.isTaskRunning()) {
+          console.log(chalk.bold.red('\n\n🛑 [TASK STOPPED] Active task stopped by user (Ctrl+C). Session saved.'))
+          agent.stop('SIGINT from user')
+          setTimeout(() => rl.prompt(), 100)
+        } else {
+          console.log(chalk.gray('\n(Exiting G0DM0D3 agent)'))
+          process.exit(0)
+        }
+      })
+
       rl.on('line', async (line) => {
         const trimmed = line.trim()
         if (trimmed === 'exit' || trimmed === 'quit') {
           rl.close()
           process.exit(0)
+        }
+
+        // Direct Stop / Cancel command
+        if (trimmed === '/stop' || trimmed === '/cancel' || trimmed === '/abort') {
+          if (agent.isTaskRunning()) {
+            console.log(chalk.bold.red('\n🛑 [STOPPING] Aborting active agent task...'))
+            agent.stop('User command /stop')
+          } else {
+            console.log(chalk.yellow('\nℹ️ No active task or prompt is currently running.\n(During execution, press Ctrl+C or type /stop to cancel immediately.)\n'))
+          }
+          rl.prompt()
+          return
         }
 
         if (trimmed === '/help' || trimmed === 'help') {

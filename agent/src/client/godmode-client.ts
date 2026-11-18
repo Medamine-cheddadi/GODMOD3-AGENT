@@ -12,6 +12,7 @@ export interface GodModeCompletionOptions {
   autotune?: boolean
   parseltongue?: boolean
   stm_modules?: string[]
+  signal?: AbortSignal
 }
 
 export interface GodModeCompletionResponse {
@@ -101,6 +102,10 @@ export class GodModeClient {
     let lastError: any
     for (let attempt = 1; attempt <= 2; attempt++) {
       try {
+        const fetchSignal = opts.signal
+          ? AbortSignal.any([opts.signal, AbortSignal.timeout(120000)])
+          : AbortSignal.timeout(120000)
+
         const res = await fetch(url, {
           method: 'POST',
           headers: {
@@ -108,7 +113,7 @@ export class GodModeClient {
             ...this.getHeaders(),
           },
           body: JSON.stringify(body),
-          signal: AbortSignal.timeout(120000),
+          signal: fetchSignal,
         })
 
         if (!res.ok) {
