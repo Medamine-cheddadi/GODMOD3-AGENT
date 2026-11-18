@@ -6,6 +6,8 @@ import os from 'os'
 import { Command } from 'commander'
 import readline from 'readline'
 import chalk from 'chalk'
+import ora from 'ora'
+import { search } from '@inquirer/prompts'
 import { GodModeAgent } from './agent/agent'
 import { GodModeClient } from './client/godmode-client'
 import { AGENT_SYSTEM_PROMPT, resolveFileMentions } from './agent/prompt'
@@ -334,6 +336,14 @@ program
       console.log(chalk.bold.cyan(`\n⚡ Goal: `) + chalk.white(userPrompt))
       console.log(chalk.gray(`Session: ${agent.getSessionId()} | Model: ${chalk.bold.yellow(resolvedModel)} (Profile: ${options.profile})\n`))
 
+      let activeSpinner: any = null
+      const stopSpinner = () => {
+        if (activeSpinner) {
+          activeSpinner.stop()
+          activeSpinner = null
+        }
+      }
+
       try {
         const result = await agent.runTask({
           task: userPrompt,
@@ -343,16 +353,27 @@ program
           resumeSession: isResuming ? resumedSession || undefined : undefined,
           requireApproval: Boolean(options.ask),
           onStep: (turn: number, action: string, detail?: string, costSummary?: string) => {
+            stopSpinner()
             const costTag = costSummary ? chalk.dim(` [${costSummary}]`) : ''
-            console.log(chalk.bold.blue(`[Step ${turn}] `) + chalk.yellow(action) + (detail ? chalk.gray(` - ${detail}`) : '') + costTag)
+            activeSpinner = ora({
+              text: chalk.bold.blue(`[Step ${turn}] `) + chalk.yellow(action) + (detail ? chalk.gray(` - ${detail}`) : '') + costTag,
+              color: 'cyan',
+            }).start()
           },
           onThinking: (thought: string) => {
+            stopSpinner()
             console.log(formatThinkingBox(thought, isVerbose))
           },
           onToolCall: (name: string, args: any) => {
+            stopSpinner()
             console.log(formatToolCallBox(name, args))
+            activeSpinner = ora({
+              text: chalk.cyan(`Executing ${name}...`),
+              color: 'cyan',
+            }).start()
           },
           onToolResult: (name: string, result: string) => {
+            stopSpinner()
             console.log(formatToolResultBox(name, result, isVerbose))
           },
           onTodoUpdate: (todos) => {
@@ -392,6 +413,7 @@ program
           },
         })
 
+        stopSpinner()
         const cleanFinalAnswer = result.finalAnswer.replace(/<(thinking|thought|reasoning)>[\s\S]*?<\/\1>/gi, '').trim()
         console.log(chalk.bold.green(`\n══════════════════ [G0DM0D3 RESPONSE] ══════════════════`))
         console.log(cleanFinalAnswer || result.finalAnswer)
@@ -400,6 +422,7 @@ program
         console.log(chalk.gray(`💾 Session saved: ${result.sessionId} (Resume with: godmod3-agent --resume ${result.sessionId})`))
         console.log(chalk.bold.green(`═════════════════════════════════════════════════════════\n`))
       } catch (err: any) {
+        stopSpinner()
         console.error(chalk.bold.red(`\nAgent Error: `) + err.message)
         console.log(chalk.yellow(`💾 Interrupted state saved. Resume with: godmod3-agent --resume\n`))
       }
@@ -862,6 +885,35 @@ program
         }
 
         if (trimmed === '/' || trimmed === '/menu' || trimmed === '/commands') {
+          if (process.stdin.isTTY) {
+            rl.pause()
+            try {
+              const selectedCmd = await search({
+                message: chalk.bold.cyan('🤖 Choose Agent Slash Command (type to filter, ↑/↓ to choose, Enter to run):'),
+                source: async (input) => {
+                  const query = (input || '').trim().toLowerCase()
+                  const filtered = REPL_COMMANDS.filter(c =>
+                    !query ||
+                    c.cmd.toLowerCase().includes(query) ||
+                    c.desc.toLowerCase().includes(query)
+                  )
+                  return filtered.map(c => ({
+                    name: `${chalk.bold.green(c.cmd.padEnd(14))} ${chalk.white(c.desc)}`,
+                    value: c.cmd,
+                    description: c.desc,
+                  }))
+                },
+              })
+              rl.resume()
+              if (selectedCmd) {
+                rl.emit('line', selectedCmd)
+                return
+              }
+            } catch {
+              rl.resume()
+            }
+          }
+
           console.log(chalk.bold.cyan('\n── 🤖 Agent Slash Commands Menu ────────────────────────────────────'))
           for (const c of REPL_COMMANDS) {
             console.log(`  ${chalk.bold.green(c.cmd.padEnd(14))} ${chalk.white(c.desc)}`)

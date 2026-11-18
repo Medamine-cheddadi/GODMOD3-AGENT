@@ -1,8 +1,7 @@
 {
   "compilerOptions": {
     "target": "es2022",
-    "downlevelIteration": true,
-    "lib": ["dom", "dom.iterable", "esnext"],
+    "lib": ["esnext"],
     "allowJs": true,
     "skipLibCheck": true,
     "strict": true,
@@ -11,18 +10,8 @@
     "module": "esnext",
     "moduleResolution": "bundler",
     "resolveJsonModule": true,
-    "isolatedModules": true,
-    "jsx": "preserve",
-    "incremental": true,
-    "plugins": [
-      {
-        "name": "next"
-      }
-    ],
-    "paths": {
-      "@/*": ["./src/*"]
-    }
+    "isolatedModules": true
   },
-  "include": ["next-env.d.ts", "src/**/*.ts", "src/**/*.tsx", "tailwind.config.ts", ".next/types/**/*.ts"],
-  "exclude": ["node_modules", "api", "HF", "functions", "research", "ChatInput.tsx", "SettingsModal.tsx", "dataset.ts"]
+  "include": ["agent/**/*.ts", "api/**/*.ts"],
+  "exclude": ["node_modules", "dist"]
 }
