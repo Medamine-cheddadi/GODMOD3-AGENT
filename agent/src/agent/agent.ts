@@ -345,6 +345,26 @@ export class GodModeAgent {
 
         this.messages.push(assistantMsg)
 
+        // Extract reasoning and <thinking> tags to emit for monitoring
+        const rawReasoning = (assistantMsg as any).reasoning || ''
+        let rawContent = assistantMsg.content || ''
+        let extractedThought = rawReasoning
+
+        const thinkMatch = rawContent.match(/<(thinking|thought|reasoning)>([\s\S]*?)<\/\1>/i)
+        if (thinkMatch) {
+          extractedThought = (extractedThought ? extractedThought + '\n' : '') + thinkMatch[2].trim()
+          rawContent = rawContent.replace(/<(thinking|thought|reasoning)>[\s\S]*?<\/\1>/gi, '').trim()
+          assistantMsg.content = rawContent
+        }
+
+        if (hasTools && rawContent && !extractedThought) {
+          extractedThought = rawContent
+        }
+
+        if (extractedThought && opts.onThinking) {
+          opts.onThinking(extractedThought, runTurn)
+        }
+
         // Check if there are tool calls
         if (assistantMsg.tool_calls && assistantMsg.tool_calls.length > 0) {
           for (const tc of assistantMsg.tool_calls) {

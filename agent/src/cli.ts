@@ -81,6 +81,7 @@ program
   .option('-u, --url <url>', 'G0DM0D3 API base URL', config.godmodeApiUrl)
   .option('-k, --key <openrouterKey>', 'OpenRouter API key override')
   .option('-w, --workdir <path>', 'Working directory for the agent execution')
+  .option('-v, --verbose', 'Expand full thinking reasoning and tool execution outputs in terminal')
   .option('-t, --max-turns <turns>', 'Maximum turns before pausing (default: unlimited, pass a number to cap)', '0')
   .option('--unlimited', 'Run without any turn ceiling (runs until task is completely finished)')
   .option('--no-auto-backend', 'Do not auto-launch backend API if offline')
@@ -199,6 +200,63 @@ program
       session: resumedSession || undefined,
     })
 
+    let isVerbose = Boolean(options.verbose)
+
+    const formatThinkingBox = (thought: string, verbose = false): string => {
+      const words = thought.trim().split(/\s+/).filter(Boolean).length
+      const lines = thought.trim().split('\n').filter(l => l.trim().length > 0)
+      const border = '──────────────────────────────────────────────────────────'
+
+      if (!verbose && lines.length > 2) {
+        const preview = lines[0].slice(0, 75)
+        return [
+          chalk.magenta(`\n╭─ 🧠 Thinking `) + chalk.magenta.bold(`[Collapsed: ${words} words] `) + chalk.magenta(border.slice(28)) + chalk.magenta('╮'),
+          chalk.gray(`│ `) + chalk.italic.white(preview + (preview.length < lines[0].length ? '...' : '')),
+          chalk.gray(`│ `) + chalk.dim(`... [${lines.length - 1} lines collapsed • toggle with /verbose]`),
+          chalk.magenta(`╰${border}╯`),
+        ].join('\n')
+      }
+
+      return [
+        chalk.magenta(`\n╭─ 🧠 Thinking `) + chalk.magenta.bold(`[${words} words] `) + chalk.magenta(border.slice(16)) + chalk.magenta('╮'),
+        ...lines.map(l => chalk.gray(`│ `) + chalk.italic.white(l)),
+        chalk.magenta(`╰${border}╯`),
+      ].join('\n')
+    }
+
+    const formatToolCallBox = (name: string, args: any): string => {
+      const border = '──────────────────────────────────────────────────────────'
+      const argStr = JSON.stringify(args)
+      const argPreview = argStr.length > 80 ? argStr.slice(0, 77) + '...' : argStr
+      return [
+        chalk.cyan(`\n╭─ 🛠️ Tool: `) + chalk.bold.cyan(name.padEnd(20)) + chalk.cyan(border.slice(30)) + chalk.cyan('╮'),
+        chalk.gray(`│ `) + chalk.yellow(`▶ Args: `) + chalk.dim(argPreview),
+      ].join('\n')
+    }
+
+    const formatToolResultBox = (name: string, result: string, verbose = false): string => {
+      const border = '──────────────────────────────────────────────────────────'
+      const lines = result.trim().split('\n')
+      const lineCount = lines.length
+
+      if (!verbose && lineCount > 4) {
+        const shown = lines.slice(0, 4)
+        return [
+          chalk.gray(`│ `) + chalk.green(`✔ Output: `) + chalk.dim(`[Collapsed - ${lineCount} lines total]`),
+          ...shown.map(l => chalk.gray(`│   `) + chalk.dim(l.length > 90 ? l.slice(0, 87) + '...' : l)),
+          chalk.gray(`│   `) + chalk.dim(`... [${lineCount - 4} more lines collapsed • toggle with /verbose]`),
+          chalk.cyan(`╰${border}╯\n`),
+        ].join('\n')
+      }
+
+      return [
+        chalk.gray(`│ `) + chalk.green(`✔ Output: `) + chalk.dim(`[${lineCount} lines]`),
+        ...lines.slice(0, 30).map(l => chalk.gray(`│   `) + chalk.dim(l.length > 90 ? l.slice(0, 87) + '...' : l)),
+        ...(lineCount > 30 ? [chalk.gray(`│   `) + chalk.dim(`... [${lineCount - 30} more lines truncated • toggle with /verbose]`)] : []),
+        chalk.cyan(`╰${border}╯\n`),
+      ].join('\n')
+    }
+
     const runAgentWithUi = async (rawPrompt: string, isResuming = false) => {
       const userPrompt = resolveFileMentions(rawPrompt)
       // ── Option 1: ULTRAPLINIAN Race Mode ──────────────────────────────
@@ -288,13 +346,14 @@ program
             const costTag = costSummary ? chalk.dim(` [${costSummary}]`) : ''
             console.log(chalk.bold.blue(`[Step ${turn}] `) + chalk.yellow(action) + (detail ? chalk.gray(` - ${detail}`) : '') + costTag)
           },
+          onThinking: (thought: string) => {
+            console.log(formatThinkingBox(thought, isVerbose))
+          },
           onToolCall: (name: string, args: any) => {
-            console.log(chalk.magenta(`  ▶ Executing: `) + chalk.bold(name))
-            console.log(chalk.gray(`    Args: ${JSON.stringify(args)}`))
+            console.log(formatToolCallBox(name, args))
           },
           onToolResult: (name: string, result: string) => {
-            const preview = result.length > 200 ? result.slice(0, 200) + '... (truncated)' : result
-            console.log(chalk.green(`  ✔ Result: `) + chalk.dim(preview.replace(/\n/g, ' ')))
+            console.log(formatToolResultBox(name, result, isVerbose))
           },
           onTodoUpdate: (todos) => {
             const completed = todos.filter(t => t.status === 'completed').length
@@ -333,8 +392,9 @@ program
           },
         })
 
+        const cleanFinalAnswer = result.finalAnswer.replace(/<(thinking|thought|reasoning)>[\s\S]*?<\/\1>/gi, '').trim()
         console.log(chalk.bold.green(`\n══════════════════ [G0DM0D3 RESPONSE] ══════════════════`))
-        console.log(result.finalAnswer)
+        console.log(cleanFinalAnswer || result.finalAnswer)
         console.log(chalk.bold.green(`─────────────────────────────────────────────────────────`))
         console.log(chalk.bold.cyan(`📊 Usage & Cost: `) + chalk.white(result.costSummary))
         console.log(chalk.gray(`💾 Session saved: ${result.sessionId} (Resume with: godmod3-agent --resume ${result.sessionId})`))
@@ -373,6 +433,7 @@ program
         { cmd: '/memory', desc: 'View saved persistent session memory' },
         { cmd: '/sessions', desc: 'List saved session checkpoints' },
         { cmd: '/resume', desc: 'Resume previous session: /resume [sessionId]' },
+        { cmd: '/verbose', desc: 'Toggle collapsible vs expanded thinking and tool monitoring' },
         { cmd: '/clear', desc: 'Reset agent memory and start fresh session' },
         { cmd: '/help', desc: 'Display this commands help menu' },
         { cmd: 'exit', desc: 'Exit the interactive agent' },
@@ -387,12 +448,70 @@ program
       }
       console.log(chalk.dim(`  ... type /help to view all ${REPL_COMMANDS.length} commands.\n`))
 
+      readline.emitKeypressEvents(process.stdin)
+
+      let isMenuRendered = false
+      const clearLiveMenu = () => {
+        if (isMenuRendered && process.stdout.isTTY) {
+          process.stdout.write('\x1b7\n\x1b[J\x1b8')
+          isMenuRendered = false
+        }
+      }
+
+      const renderLiveMenu = (lineText: string) => {
+        if (!process.stdout.isTTY) return
+        if (!lineText.startsWith('/')) {
+          clearLiveMenu()
+          return
+        }
+
+        const query = lineText.slice(1).trim().toLowerCase()
+        const matches = REPL_COMMANDS.filter(c => {
+          if (!query) return true
+          return (
+            c.cmd.toLowerCase().slice(1).startsWith(query) ||
+            c.desc.toLowerCase().includes(query)
+          )
+        }).slice(0, 8)
+
+        if (matches.length === 0) {
+          clearLiveMenu()
+          return
+        }
+
+        process.stdout.write('\x1b7') // Save cursor position
+        process.stdout.write('\n\x1b[J') // Move down & clear everything below
+        process.stdout.write(chalk.cyan('┌── 🤖 Slash Commands Menu (Tab to complete, Enter to run) ────────┐\n'))
+        for (const m of matches) {
+          const paddedCmd = chalk.bold.green(m.cmd.padEnd(14))
+          const desc = m.desc.length > 50 ? m.desc.slice(0, 47) + '...' : m.desc
+          process.stdout.write(chalk.cyan('│ ') + `${paddedCmd} ${chalk.white(desc.padEnd(50))}` + chalk.cyan(' │\n'))
+        }
+        process.stdout.write(chalk.cyan('└── type /help to view all commands ────────────────────────────────┘'))
+        process.stdout.write('\x1b8') // Restore cursor position back to prompt
+        isMenuRendered = true
+      }
+
+      const keypressListener = (_: any, key: any) => {
+        if (key && key.name === 'escape') {
+          clearLiveMenu()
+          return
+        }
+        setImmediate(() => {
+          const currentLine = (rl as any).line || ''
+          renderLiveMenu(currentLine)
+        })
+      }
+
+      process.stdin.on('keypress', keypressListener)
+
       const rl = readline.createInterface({
         input: process.stdin,
         output: process.stdout,
         prompt: chalk.bold.magenta('godmod3> '),
         historySize: MAX_HISTORY_LINES,
         completer: (line: string) => {
+          clearLiveMenu()
           const trimmed = line.trim()
           const hits = REPL_COMMANDS.filter(c => c.cmd.startsWith(trimmed))
           if (trimmed === '/' || hits.length > 0) {
@@ -414,7 +533,12 @@ program
 
       rl.prompt()
 
+      rl.on('close', () => {
+        process.stdin.removeListener('keypress', keypressListener)
+      })
+
       rl.on('SIGINT', () => {
+        clearLiveMenu()
         if (agent.isTaskRunning()) {
           console.log(chalk.bold.red('\n\n🛑 [TASK STOPPED] Active task stopped by user (Ctrl+C). Session saved.'))
           agent.stop('SIGINT from user')
@@ -426,6 +550,7 @@ program
       })
 
       rl.on('line', async (line) => {
+        clearLiveMenu()
         const trimmed = line.trim()
         if (trimmed) {
           appendCliHistory(trimmed)
@@ -457,6 +582,14 @@ program
           return
         }
 
+        // Verbose monitoring mode toggle
+        if (trimmed === '/verbose') {
+          isVerbose = !isVerbose
+          console.log(chalk.bold.cyan(`\n🔍 Monitoring Mode: ${isVerbose ? chalk.bold.green('VERBOSE (expanded thinking & full tool outputs)') : chalk.bold.yellow('COLLAPSED (compact accordion summaries)')}\n`))
+          rl.prompt()
+          return
+        }
+
         // Live Status & State Explanation
         if (trimmed === '/status' || trimmed === '/explain') {
           console.log(chalk.bold.cyan(`\n${agent.explainState()}\n`))
@@ -470,6 +603,11 @@ program
           if (!guidance) {
             console.log(chalk.yellow('Usage: /steer <instruction or command to add over the previous one>\nExample: /steer also check if port 8080 is accessible\n'))
             rl.prompt()
+            return
+          }
+          if (agent.isTaskRunning()) {
+            agent.injectSteeringMessage(guidance)
+            console.log(chalk.bold.magenta(`\n⚡ [STEERING INJECTED MID-CHAT] Guidance queued into active running task:\n"${guidance}"\n`))
             return
           }
           console.log(chalk.bold.magenta(`\n⚡ [STEERING INJECTED] Adding command over active session:`))

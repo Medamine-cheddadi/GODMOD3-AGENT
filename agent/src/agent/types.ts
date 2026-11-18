@@ -79,6 +79,7 @@ export interface AgentRunOptions {
   requireApproval?: boolean
   signal?: AbortSignal
   onStep?: (turn: number, action: string, detail?: string, costSummary?: string) => void
+  onThinking?: (thought: string, turn: number) => void
   onToolCall?: (toolName: string, args: any) => void
   onToolResult?: (toolName: string, result: string) => void
   onComplete?: (finalOutput: string, costSummary?: string) => void
